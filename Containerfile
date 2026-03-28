@@ -7,9 +7,13 @@ LABEL maintainer="MonitorIA" \
 
 WORKDIR /app
 
-# Dependances Python uniquement - pas de systemd dans le container.
-# L'acces aux logs se fait par lecture directe de /var/log monte depuis l'hote,
-# avec fallback sur journalctl si le socket journal est monte.
+# Installation de systemd pour disposer du binaire journalctl.
+# Necessaire sur les systemes sans auth.log (journald pur, sans rsyslog).
+# systemd ne tourne pas comme PID 1 - seul le binaire journalctl est utilise.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        systemd \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

@@ -24,10 +24,12 @@ podman build -t "$IMAGE" -f Containerfile .
 # Lancement du container avec acces aux logs du systeme hote
 #
 # Volumes montes :
-#   /var/log              - fichiers de logs systemd, fail2ban, auth.log
+#   /var/log              - fichiers de logs (fail2ban, kern, etc.)
 #   /run/systemd/journal  - socket journald pour journalctl dans le container
 #   $CONFIG_DIR           - persistance de la configuration email
 #
+# --group-add keep-groups : le container herite des groupes supplementaires de
+#   l'utilisateur hote (ex: adm), ce qui permet de lire fail2ban.log (root:adm 640)
 # L'option :z applique le bon label SELinux si necessaire
 
 echo "[INFO] Demarrage du container $CONTAINER sur le port 8080..."
@@ -38,6 +40,7 @@ podman run -d \
     -v /var/log:/var/log:ro,z \
     -v /run/systemd/journal:/run/systemd/journal:ro,z \
     -v "$CONFIG_DIR":/app/config:z \
+    --group-add keep-groups \
     --restart unless-stopped \
     "$IMAGE"
 
