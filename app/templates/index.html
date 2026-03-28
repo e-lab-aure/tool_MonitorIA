@@ -9,7 +9,7 @@
 
         body {
             background: #080808;
-            color: #b0b0b0;
+            color: #d0d0d0;
             font-family: 'Courier New', Courier, monospace;
             font-size: 12px;
             height: 100vh;
@@ -59,7 +59,7 @@
 
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-        #status-text { font-size: 10px; color: #555; }
+        #status-text { font-size: 10px; color: #888; }
 
         /* Filtres de service */
         .filters {
@@ -71,7 +71,7 @@
         .filter-btn {
             background: transparent;
             border: 1px solid #2a2a2a;
-            color: #555;
+            color: #888;
             padding: 3px 9px;
             cursor: pointer;
             font-family: inherit;
@@ -80,8 +80,8 @@
             border-radius: 2px;
             transition: all 0.2s;
         }
-        .filter-btn:hover  { border-color: #444; color: #888; }
-        .filter-btn.active { border-color: #555; color: #bbb; background: #141414; }
+        .filter-btn:hover  { border-color: #555; color: #bbb; }
+        .filter-btn.active { border-color: #777; color: #eeeeee; background: #141414; }
 
         /* Actions */
         .actions { display: flex; gap: 6px; align-items: center; }
@@ -89,7 +89,7 @@
         .btn {
             background: transparent;
             border: 1px solid #2a2a2a;
-            color: #666;
+            color: #999;
             padding: 4px 10px;
             cursor: pointer;
             font-family: inherit;
@@ -98,7 +98,7 @@
             border-radius: 2px;
             transition: all 0.2s;
         }
-        .btn:hover { border-color: #444; color: #aaa; }
+        .btn:hover { border-color: #555; color: #ddd; }
         .btn.alert-active { border-color: #cc2222; color: #cc2222; }
 
         /* --- Barre de stats --- */
@@ -111,12 +111,12 @@
             flex-shrink: 0;
         }
 
-        .stat { font-size: 10px; color: #444; letter-spacing: 1px; }
+        .stat { font-size: 10px; color: #777; letter-spacing: 1px; }
         .stat b { font-weight: bold; }
-        .stat.f b { color: #cc3333; }
-        .stat.s b { color: #33aa33; }
-        .stat.n b { color: #cc8800; }
-        .stat.t b { color: #555; }
+        .stat.f b { color: #ff4444; }
+        .stat.s b { color: #44dd44; }
+        .stat.n b { color: #ffaa00; }
+        .stat.t b { color: #aaaaaa; }
 
         /* --- Zone de logs --- */
         #log-container {
@@ -137,16 +137,16 @@
         .log-line:hover { background: #0d0d0d; }
 
         /* Couleurs par type d'evenement */
-        .log-line.normal    { color: #686868; }
-        .log-line.failure   { color: #ff4444; border-color: #aa1111; }
-        .log-line.success   { color: #44cc44; border-color: #227722; }
-        .log-line.wireguard { color: #6699ff; border-color: #3355bb; }
-        .log-line.ban       { color: #ff8800; border-color: #995500; }
-        .log-line.unban     { color: #ddcc00; border-color: #887700; }
-        .log-line.nftables  { color: #bb66dd; border-color: #773399; }
+        .log-line.normal    { color: #909090; }
+        .log-line.failure   { color: #ff3333; border-color: #cc1111; }
+        .log-line.success   { color: #33ff55; border-color: #22aa33; }
+        .log-line.wireguard { color: #55aaff; border-color: #2266cc; }
+        .log-line.ban       { color: #ff9900; border-color: #bb6600; }
+        .log-line.unban     { color: #ffee00; border-color: #ccaa00; }
+        .log-line.nftables  { color: #dd66ff; border-color: #9922bb; }
 
-        .log-ts   { flex-shrink:0; min-width:145px; padding:0 8px 0 14px; opacity:0.35; font-size:11px; }
-        .log-svc  { flex-shrink:0; min-width:80px;  padding-right:10px;   opacity:0.45; font-size:10px; }
+        .log-ts   { flex-shrink:0; min-width:145px; padding:0 8px 0 14px; opacity:0.55; font-size:11px; }
+        .log-svc  { flex-shrink:0; min-width:80px;  padding-right:10px;   opacity:0.70; font-size:10px; }
         .log-text { flex:1; padding-right:12px; }
 
         /* --- Scrollbar minimaliste --- */
