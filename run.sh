@@ -1,11 +1,13 @@
 #!/bin/bash
 # run.sh - Construit et lance le container MonitorIA
+# Ce script peut etre place n'importe ou - les chemins sont fixes vers /opt/tool_MonitorIA
 
 set -e
 
 IMAGE="monitoria:latest"
 CONTAINER="monitoria"
-CONFIG_DIR="$(pwd)/config"
+PROJECT_DIR="/opt/tool_MonitorIA"
+CONFIG_DIR="$PROJECT_DIR/config"
 
 # Creation du repertoire de configuration si absent
 mkdir -p "$CONFIG_DIR"
@@ -17,16 +19,16 @@ if podman container exists "$CONTAINER" 2>/dev/null; then
     podman rm "$CONTAINER" 2>/dev/null || true
 fi
 
-# Construction de l'image
+# Construction de l'image depuis le repertoire du projet
 echo "[INFO] Construction de l'image $IMAGE..."
-podman build -t "$IMAGE" -f Containerfile .
+podman build -t "$IMAGE" -f "$PROJECT_DIR/Containerfile" "$PROJECT_DIR"
 
 # Lancement du container avec acces aux logs du systeme hote
 #
 # Volumes montes :
 #   /var/log          - fichiers de logs systemd, fail2ban, auth.log
 #   /run/systemd/...  - socket journald pour journalctl dans le container
-#   ./config          - persistance de la configuration email
+#   $CONFIG_DIR       - persistance de la configuration email
 #
 # L'option :z applique le bon label SELinux si necessaire (systemes avec SELinux actif)
 
