@@ -38,7 +38,7 @@ podman run -d \
     --name "$CONTAINER" \
     -p 8080:8080 \
     -v /var/log:/var/log:ro,z \
-    -v /run/systemd/journal:/run/systemd/journal:ro,z \
+    -v /run/log/journal:/run/log/journal:ro,z \
     -v "$CONFIG_DIR":/app/config:z \
     --group-add keep-groups \
     --restart unless-stopped \
