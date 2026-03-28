@@ -1,0 +1,20 @@
+# Configuration sensible (contient le mot de passe SMTP)
+config/config.json
+
+# Environnements Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Artefacts de build Podman/Docker
+*.tar
+
+# Fichiers IDE
+.vscode/
+.idea/
+
+# Fichiers locaux
+CLAUDE.md
+.env

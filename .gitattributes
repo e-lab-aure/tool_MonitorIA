@@ -1,0 +1,12 @@
+# Forcer les fins de ligne LF pour tous les fichiers texte
+# Le container Podman tourne sur Linux - les LF sont requis
+* text=auto eol=lf
+
+# Scripts shell - toujours LF
+*.sh text eol=lf
+
+# Fichiers binaires
+*.png binary
+*.jpg binary
+*.ico binary
+*.tar binary
