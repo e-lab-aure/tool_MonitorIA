@@ -59,7 +59,7 @@
 
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-        #status-text { font-size: 10px; color: #3a3a3a; }
+        #status-text { font-size: 10px; color: #555; }
 
         /* Filtres de service */
         .filters {
@@ -70,8 +70,8 @@
 
         .filter-btn {
             background: transparent;
-            border: 1px solid #1e1e1e;
-            color: #3a3a3a;
+            border: 1px solid #2a2a2a;
+            color: #555;
             padding: 3px 9px;
             cursor: pointer;
             font-family: inherit;
@@ -80,16 +80,16 @@
             border-radius: 2px;
             transition: all 0.2s;
         }
-        .filter-btn:hover  { border-color: #333; color: #777; }
-        .filter-btn.active { border-color: #444; color: #999; background: #141414; }
+        .filter-btn:hover  { border-color: #444; color: #888; }
+        .filter-btn.active { border-color: #555; color: #bbb; background: #141414; }
 
         /* Actions */
         .actions { display: flex; gap: 6px; align-items: center; }
 
         .btn {
             background: transparent;
-            border: 1px solid #1e1e1e;
-            color: #444;
+            border: 1px solid #2a2a2a;
+            color: #666;
             padding: 4px 10px;
             cursor: pointer;
             font-family: inherit;
@@ -98,7 +98,7 @@
             border-radius: 2px;
             transition: all 0.2s;
         }
-        .btn:hover { border-color: #333; color: #888; }
+        .btn:hover { border-color: #444; color: #aaa; }
         .btn.alert-active { border-color: #cc2222; color: #cc2222; }
 
         /* --- Barre de stats --- */
@@ -111,7 +111,7 @@
             flex-shrink: 0;
         }
 
-        .stat { font-size: 10px; color: #2e2e2e; letter-spacing: 1px; }
+        .stat { font-size: 10px; color: #444; letter-spacing: 1px; }
         .stat b { font-weight: bold; }
         .stat.f b { color: #cc3333; }
         .stat.s b { color: #33aa33; }
@@ -137,13 +137,13 @@
         .log-line:hover { background: #0d0d0d; }
 
         /* Couleurs par type d'evenement */
-        .log-line.normal    { color: #3a3a3a; }
-        .log-line.failure   { color: #cc2222; border-color: #881111; }
-        .log-line.success   { color: #33aa33; border-color: #1a6620; }
-        .log-line.wireguard { color: #5577cc; border-color: #334488; }
-        .log-line.ban       { color: #cc6600; border-color: #884400; }
-        .log-line.unban     { color: #aa9900; border-color: #666600; }
-        .log-line.nftables  { color: #8844aa; border-color: #552277; }
+        .log-line.normal    { color: #686868; }
+        .log-line.failure   { color: #ff4444; border-color: #aa1111; }
+        .log-line.success   { color: #44cc44; border-color: #227722; }
+        .log-line.wireguard { color: #6699ff; border-color: #3355bb; }
+        .log-line.ban       { color: #ff8800; border-color: #995500; }
+        .log-line.unban     { color: #ddcc00; border-color: #887700; }
+        .log-line.nftables  { color: #bb66dd; border-color: #773399; }
 
         .log-ts   { flex-shrink:0; min-width:145px; padding:0 8px 0 14px; opacity:0.35; font-size:11px; }
         .log-svc  { flex-shrink:0; min-width:80px;  padding-right:10px;   opacity:0.45; font-size:10px; }
@@ -219,13 +219,13 @@
         .field { margin-bottom: 13px; }
         .field label {
             display: block;
-            color: #3a3a3a;
+            color: #555;
             font-size: 10px;
             letter-spacing: 1px;
             text-transform: uppercase;
             margin-bottom: 5px;
         }
-        .field input {
+        .field input, .field select {
             width: 100%;
             background: #080808;
             border: 1px solid #1c1c1c;
@@ -236,7 +236,8 @@
             outline: none;
             transition: border-color 0.2s;
         }
-        .field input:focus { border-color: #333; }
+        .field input:focus, .field select:focus { border-color: #333; }
+        .field select option { background: #111; }
 
         /* Checkboxes niveaux d'alerte */
         .check-group { display: flex; gap: 16px; margin-top: 3px; }
@@ -340,6 +341,14 @@
         <div class="field">
             <label>Port</label>
             <input type="number" id="smtp-port" placeholder="587">
+        </div>
+        <div class="field">
+            <label>Securite SMTP</label>
+            <select id="smtp-security">
+                <option value="starttls">STARTTLS (port 587)</option>
+                <option value="ssl">SSL/TLS (port 465)</option>
+                <option value="none">Aucune (deconseille)</option>
+            </select>
         </div>
         <div class="field">
             <label>Utilisateur</label>
@@ -533,9 +542,10 @@
             document.getElementById('smtp-pass').value  = '';
 
             const alertOn = cfg.alert_on || ['success'];
-            document.getElementById('chk-success').checked = alertOn.includes('success');
-            document.getElementById('chk-failure').checked = alertOn.includes('failure');
-            document.getElementById('chk-ban').checked     = alertOn.includes('ban');
+            document.getElementById('chk-success').checked  = alertOn.includes('success');
+            document.getElementById('chk-failure').checked  = alertOn.includes('failure');
+            document.getElementById('chk-ban').checked      = alertOn.includes('ban');
+            document.getElementById('smtp-security').value  = cfg.smtp_security || 'starttls';
 
             state.emailEnabled = cfg.enabled || false;
             toggleEnabled.className = 'toggle-switch' + (state.emailEnabled ? ' on' : '');
@@ -569,13 +579,14 @@
         if (document.getElementById('chk-ban').checked)     alertOn.push('ban');
 
         const payload = {
-            enabled:   state.emailEnabled,
-            smtp_host: document.getElementById('smtp-host').value.trim(),
-            smtp_port: parseInt(document.getElementById('smtp-port').value) || 587,
-            smtp_user: document.getElementById('smtp-user').value.trim(),
-            smtp_pass: document.getElementById('smtp-pass').value,
-            recipient: document.getElementById('recipient').value.trim(),
-            alert_on:  alertOn
+            enabled:       state.emailEnabled,
+            smtp_host:     document.getElementById('smtp-host').value.trim(),
+            smtp_port:     parseInt(document.getElementById('smtp-port').value) || 587,
+            smtp_security: document.getElementById('smtp-security').value,
+            smtp_user:     document.getElementById('smtp-user').value.trim(),
+            smtp_pass:     document.getElementById('smtp-pass').value,
+            recipient:     document.getElementById('recipient').value.trim(),
+            alert_on:      alertOn
         };
 
         try {

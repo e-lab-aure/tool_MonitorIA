@@ -25,6 +25,7 @@ DEFAULT_CONFIG = {
     "enabled": False,
     "smtp_host": "",
     "smtp_port": 587,
+    "smtp_security": "starttls",
     "smtp_user": "",
     "smtp_pass": "",
     "recipient": "",
@@ -118,6 +119,34 @@ def broadcast(entry: dict) -> None:
             clients.remove(q)
 
 
+def smtp_send(msg: MIMEMultipart) -> None:
+    """
+    Envoie un message SMTP en respectant le mode de securite configure.
+    - ssl      : connexion directement chiffree via SMTP_SSL (port 465)
+    - starttls : connexion en clair puis upgrade TLS (port 587)
+    - none     : connexion en clair sans chiffrement (deconseille)
+    """
+    host     = email_config["smtp_host"]
+    port     = int(email_config["smtp_port"])
+    user     = email_config["smtp_user"]
+    password = email_config["smtp_pass"]
+    security = email_config.get("smtp_security", "starttls")
+
+    if security == "ssl":
+        with smtplib.SMTP_SSL(host, port) as server:
+            server.login(user, password)
+            server.sendmail(msg["From"], msg["To"], msg.as_string())
+    elif security == "starttls":
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(msg["From"], msg["To"], msg.as_string())
+    else:
+        with smtplib.SMTP(host, port) as server:
+            server.login(user, password)
+            server.sendmail(msg["From"], msg["To"], msg.as_string())
+
+
 def send_alert(entry: dict) -> None:
     """
     Envoie une alerte mail si l'evenement correspond aux criteres configures.
@@ -143,10 +172,7 @@ def send_alert(entry: dict) -> None:
                 f"Ligne   : {entry['line']}"
             )
             msg.attach(MIMEText(body, "plain"))
-            with smtplib.SMTP(email_config["smtp_host"], int(email_config["smtp_port"])) as server:
-                server.starttls()
-                server.login(email_config["smtp_user"], email_config["smtp_pass"])
-                server.sendmail(email_config["smtp_user"], email_config["recipient"], msg.as_string())
+            smtp_send(msg)
             app.logger.info(f"[INFO] Alerte mail envoyee pour {entry['service']} - {entry['type']}")
         except smtplib.SMTPException as exc:
             app.logger.error(f"[ERROR] Envoi mail SMTP echoue : {exc}")
@@ -367,16 +393,12 @@ def test_email():
         return jsonify({"error": "Configuration SMTP incomplete"}), 400
 
     try:
-        msg = MIMEText("Ceci est un email de test envoye par MonitorIA. La configuration est correcte.")
+        msg = MIMEMultipart()
         msg["From"] = email_config["smtp_user"]
         msg["To"] = email_config["recipient"]
         msg["Subject"] = "[MonitorIA] Test de configuration"
-
-        with smtplib.SMTP(email_config["smtp_host"], int(email_config["smtp_port"])) as server:
-            server.starttls()
-            server.login(email_config["smtp_user"], email_config["smtp_pass"])
-            server.sendmail(email_config["smtp_user"], email_config["recipient"], msg.as_string())
-
+        msg.attach(MIMEText("Ceci est un email de test envoye par MonitorIA. La configuration est correcte.", "plain"))
+        smtp_send(msg)
         app.logger.info("[INFO] Email de test envoye avec succes")
         return jsonify({"status": "ok"})
     except smtplib.SMTPAuthenticationError:
