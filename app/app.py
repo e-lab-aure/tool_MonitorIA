@@ -75,10 +75,16 @@ LOG_PATTERNS = [
         # Handshake avec un pair connu : connexion WireGuard aboutie.
         # "Receiving handshake initiation from peer N" = pair authentifie (cle connue).
         # "Sending handshake initiation to peer N"    = keepalive ou reconnexion sortante.
+        # Connexion WireGuard etablie avec un pair connu.
+        # "Sending handshake response" = serveur a authentifie le pair et repond.
+        # "Keypair created"            = tunnel chiffre operationnel.
+        # "Sending handshake initiation" = reconnexion / keepalive sortant.
+        # NB : "Receiving handshake initiation" est le DEBUT du handshake (pas encore etabli)
+        #      → tombe dans le pattern generique ci-dessous.
         "id": "wireguard_success",
         "regex": re.compile(
-            r"(wireguard|wg\d+).*(Receiving handshake initiation from peer|"
-            r"Sending handshake initiation to peer|Sending handshake response to peer)",
+            r"(wireguard|wg\d+).*(Sending handshake response to peer|"
+            r"Sending handshake initiation to peer|Keypair \d+ created for peer)",
             re.IGNORECASE
         ),
         "type": "wireguard_success",
@@ -288,42 +294,6 @@ def tail_journald() -> None:
         time.sleep(5)
 
 
-# Filtre rapide pour les messages noyau : ne traiter que les lignes WireGuard
-# afin d'eviter de diffuser tous les messages kernel non pertinents.
-_KERNEL_WG_FILTER = re.compile(r"wireguard", re.IGNORECASE)
-
-
-def tail_journald_kernel() -> None:
-    """
-    Surveille le journal noyau (journalctl -k) pour capturer les logs du module
-    WireGuard et les paquets nftables loggues avec un prefixe [wireguard-*].
-    Seules les lignes contenant "wireguard" sont transmises au pipeline de traitement.
-    """
-    cmd = ["journalctl", "-f", "-k", "-n", "50", "--no-pager", "--output=short-iso"]
-
-    app.logger.info("[INFO] Demarrage surveillance journalctl kernel (WireGuard)")
-
-    while True:
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True
-            )
-            for line in proc.stdout:
-                if _KERNEL_WG_FILTER.search(line):
-                    process_line(line)
-            proc.wait()
-            app.logger.warning("[WARNING] journalctl -k s'est arrete, redemarrage dans 5s")
-        except FileNotFoundError:
-            app.logger.warning("[WARNING] journalctl non disponible pour les logs kernel")
-            break
-        except Exception as exc:
-            app.logger.error(f"[ERROR] journalctl kernel : {exc}")
-        time.sleep(5)
-
-
 def tail_file(filepath: str, service: str) -> None:
     """
     Surveille un fichier de log en continu (lecture de fin de fichier).
@@ -359,16 +329,15 @@ def start_log_watchers() -> None:
     """
     threading.Thread(target=tail_journald, daemon=True).start()
 
-    # Surveillance du journal noyau pour les logs WireGuard (module kernel + nftables)
-    threading.Thread(target=tail_journald_kernel, daemon=True).start()
-
-    # Fichiers surveilles en complement (couvrent fail2ban, nftables, acces SSH)
+    # Fichiers surveilles en complement (couvrent fail2ban, nftables, acces SSH et WireGuard).
+    # syslog exclu : il duplique kern.log pour les messages kernel, generant des doublons.
+    # journalctl -k est exclu : ne trouve pas les fichiers journal dans le container
+    # (mismatch machine-id hote/container) ; kern.log couvre le meme contenu via rsyslog.
     log_files = [
         ("/var/log/fail2ban.log", "fail2ban"),
         ("/var/log/auth.log", "SSH"),
         ("/var/log/secure", "SSH"),
         ("/var/log/kern.log", "nftables"),
-        ("/var/log/syslog", "system"),
     ]
     for filepath, service in log_files:
         if os.path.exists(filepath):
