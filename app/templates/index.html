@@ -83,6 +83,24 @@
         .filter-btn:hover  { border-color: #555; color: #bbb; }
         .filter-btn.active { border-color: #777; color: #eeeeee; background: #141414; }
 
+        /* Champ de recherche textuelle */
+        .search-input {
+            background: transparent;
+            border: 1px solid #2a2a2a;
+            color: #aaa;
+            padding: 3px 8px;
+            font-family: inherit;
+            font-size: 10px;
+            width: 150px;
+            outline: none;
+            letter-spacing: 0.5px;
+            border-radius: 2px;
+            transition: border-color 0.2s, color 0.2s;
+        }
+        .search-input:focus         { border-color: #555; color: #eee; }
+        .search-input::placeholder  { color: #333; }
+        .search-input.active        { border-color: #777; color: #eee; }
+
         /* Actions */
         .actions { display: flex; gap: 6px; align-items: center; }
 
@@ -306,6 +324,7 @@
         <button class="filter-btn" data-filter="WireGuard">WIREGUARD</button>
         <button class="filter-btn" data-filter="fail2ban">FAIL2BAN</button>
         <button class="filter-btn" data-filter="nftables">NFTABLES</button>
+        <input type="text" class="search-input" id="search-input" placeholder="RECHERCHER...">
     </div>
 
     <div class="actions">
@@ -392,8 +411,9 @@
 <script>
     // --- Etat global ---
     const state = {
-        autoScroll: true,
+        autoScroll:   true,
         activeFilter: 'all',
+        searchQuery:  '',
         emailEnabled: false,
         counts: { failure: 0, success: 0, ban: 0, total: 0 }
     };
@@ -406,6 +426,7 @@
     const toggleEnabled = document.getElementById('toggle-enabled');
     const feedback      = document.getElementById('feedback');
     const btnScroll     = document.getElementById('btn-scroll');
+    const searchInput   = document.getElementById('search-input');
 
     // --- Connexion SSE ---
     let evtSource = null;
@@ -432,9 +453,16 @@
         };
     }
 
-    // --- Affichage d'une ligne de log ---
+    // --- Filtre combine : service + recherche textuelle ---
+    function matchesFilters(row) {
+        const serviceOk = state.activeFilter === 'all' || row.dataset.service === state.activeFilter;
+        const searchOk  = !state.searchQuery || row.dataset.text.includes(state.searchQuery);
+        return serviceOk && searchOk;
+    }
+
+    // --- Affichage d'une ligne de log (prepend : plus recent en premier) ---
     function appendLog(entry) {
-        // Compteurs
+        // Compteurs (independants des filtres actifs)
         state.counts.total++;
         if (entry.type === 'failure' || entry.type === 'wireguard_failure') state.counts.failure++;
         else if (entry.type === 'success' || entry.type === 'wireguard_success') state.counts.success++;
@@ -445,6 +473,8 @@
         const row = document.createElement('div');
         row.className = 'log-line ' + (entry.type || 'normal');
         row.dataset.service = entry.service;
+        // Texte normalise pour la recherche (evite de relire le DOM a chaque frappe)
+        row.dataset.text = entry.line.toLowerCase();
 
         const ts = document.createElement('span');
         ts.className = 'log-ts';
@@ -462,20 +492,20 @@
         row.appendChild(svc);
         row.appendChild(txt);
 
-        // Application du filtre actif
-        if (state.activeFilter !== 'all' && entry.service !== state.activeFilter) {
-            row.style.display = 'none';
-        }
+        // Application des filtres combines (service + recherche)
+        row.style.display = matchesFilters(row) ? 'flex' : 'none';
 
-        logContainer.appendChild(row);
+        // Insertion en tete : les plus recents apparaissent en haut
+        logContainer.prepend(row);
 
-        // Limite memoire : conserver au plus 2000 lignes dans le DOM
+        // Limite memoire : supprimer les plus anciens (en bas du DOM)
         while (logContainer.children.length > 2000) {
-            logContainer.removeChild(logContainer.firstChild);
+            logContainer.removeChild(logContainer.lastChild);
         }
 
+        // Auto-scroll maintient le haut de la liste (logs les plus recents)
         if (state.autoScroll) {
-            logContainer.scrollTop = logContainer.scrollHeight;
+            logContainer.scrollTop = 0;
         }
     }
 
@@ -486,32 +516,48 @@
         document.getElementById('cnt-total').textContent   = state.counts.total;
     }
 
-    // --- Filtres ---
+    // --- Filtres de service ---
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             state.activeFilter = btn.dataset.filter;
-
             document.querySelectorAll('.log-line').forEach(line => {
-                const show = state.activeFilter === 'all' || line.dataset.service === state.activeFilter;
-                line.style.display = show ? 'flex' : 'none';
+                line.style.display = matchesFilters(line) ? 'flex' : 'none';
             });
         });
     });
 
-    // --- Auto-scroll ---
+    // --- Recherche textuelle ---
+    searchInput.addEventListener('input', () => {
+        state.searchQuery = searchInput.value.toLowerCase().trim();
+        searchInput.classList.toggle('active', state.searchQuery.length > 0);
+        document.querySelectorAll('.log-line').forEach(line => {
+            line.style.display = matchesFilters(line) ? 'flex' : 'none';
+        });
+    });
+
+    // Vider la recherche avec Echap
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            searchInput.value = '';
+            searchInput.dispatchEvent(new Event('input'));
+            searchInput.blur();
+        }
+    });
+
+    // --- Auto-scroll (les nouveaux logs arrivent en haut) ---
     btnScroll.addEventListener('click', () => {
         state.autoScroll = !state.autoScroll;
         btnScroll.style.color = state.autoScroll ? '' : '#cc2222';
         btnScroll.style.borderColor = state.autoScroll ? '' : '#441111';
-        if (state.autoScroll) logContainer.scrollTop = logContainer.scrollHeight;
+        if (state.autoScroll) logContainer.scrollTop = 0;
     });
 
-    // Desactiver l'auto-scroll si l'utilisateur remonte dans les logs
+    // Desactiver l'auto-scroll si l'utilisateur descend dans les anciens logs
     logContainer.addEventListener('scroll', () => {
-        const atBottom = logContainer.scrollHeight - logContainer.scrollTop <= logContainer.clientHeight + 30;
-        if (!atBottom && state.autoScroll) {
+        const atTop = logContainer.scrollTop <= 30;
+        if (!atTop && state.autoScroll) {
             state.autoScroll = false;
             btnScroll.style.color = '#cc2222';
             btnScroll.style.borderColor = '#441111';
