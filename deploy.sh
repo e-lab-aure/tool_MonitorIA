@@ -10,13 +10,6 @@ CONFIG_DIR="/opt/tool_MonitorIA/config"
 # Creation du repertoire de configuration si absent
 mkdir -p "$CONFIG_DIR"
 
-# Arret et suppression du container existant si necessaire
-if podman container exists "$CONTAINER" 2>/dev/null; then
-    echo "[INFO] Arret du container existant..."
-    podman stop "$CONTAINER" 2>/dev/null || true
-    podman rm "$CONTAINER" 2>/dev/null || true
-fi
-
 # Construction de l'image
 echo "[INFO] Construction de l'image $IMAGE..."
 podman build -t "$IMAGE" -f Containerfile .
@@ -35,6 +28,7 @@ podman build -t "$IMAGE" -f Containerfile .
 echo "[INFO] Demarrage du container $CONTAINER sur le port 8080..."
 
 podman run -d \
+    --replace \
     --name "$CONTAINER" \
     -p 8080:8080 \
     -v /var/log:/var/log:ro,z \

@@ -3,6 +3,7 @@ MonitorIA - Dashboard de monitoring en temps reel.
 Surveille les logs SSH, WireGuard, fail2ban et nftables via SSE.
 """
 
+import atexit
 import os
 import re
 import json
@@ -12,7 +13,7 @@ import threading
 import subprocess
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, Response, jsonify, request, stream_with_context
@@ -26,7 +27,11 @@ app.logger.setLevel(logging.INFO)
 
 # --- Configuration ---
 
-CONFIG_PATH = os.environ.get("CONFIG_PATH", "/app/config/config.json")
+CONFIG_PATH    = os.environ.get("CONFIG_PATH",    "/app/config/config.json")
+IP_STATS_PATH  = os.environ.get("IP_STATS_PATH",  "/app/config/ip_stats.json")
+
+# Duree de retention des stats IP : les buckets plus vieux sont purges
+RETENTION_DAYS = 7
 
 # Port UDP WireGuard (51820 par defaut, surchargeable via variable d'environnement)
 WG_PORT = re.escape(os.environ.get("WG_PORT", "51820"))
@@ -249,7 +254,9 @@ def send_alert(entry: dict) -> None:
 # Verrou pour l'acces concurrent depuis les threads de surveillance
 _ip_lock = threading.Lock()
 
-# { "1.2.3.4": { count, first_seen, last_seen, services: {svc: n}, types: {type: n} } }
+# Structure a fenetre glissante :
+# { "1.2.3.4": { "buckets": { "YYYY-MM-DD": { count, first_seen, last_seen, services, types } } } }
+# Chaque jour constitue un bucket independant ; les buckets expires (> RETENTION_DAYS) sont purges.
 _ip_stats: dict = {}
 
 # Types d'evenements consideres comme hostiles pour le suivi IP
@@ -295,23 +302,116 @@ def classify_threat(data: dict) -> str:
     return "probe"
 
 
+def _aggregate_buckets(buckets: dict) -> dict | None:
+    """
+    Calcule les stats agregees depuis les buckets actifs de l'IP.
+    Un bucket est actif si sa date est dans la fenetre de retention.
+    Doit etre appele sous _ip_lock (pas de verrou interne).
+    Retourne None si aucun evenement actif n'existe.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
+    total_count = 0
+    first_seen: str | None = None
+    last_seen:  str | None = None
+    services: dict = {}
+    types:    dict = {}
+
+    for day, bucket in buckets.items():
+        if day < cutoff:
+            continue
+        total_count += bucket["count"]
+        if first_seen is None or bucket["first_seen"] < first_seen:
+            first_seen = bucket["first_seen"]
+        if last_seen is None or bucket["last_seen"] > last_seen:
+            last_seen = bucket["last_seen"]
+        for svc, n in bucket["services"].items():
+            services[svc] = services.get(svc, 0) + n
+        for t, n in bucket["types"].items():
+            types[t] = types.get(t, 0) + n
+
+    if total_count == 0:
+        return None
+    return {
+        "count":      total_count,
+        "first_seen": first_seen,
+        "last_seen":  last_seen,
+        "services":   services,
+        "types":      types
+    }
+
+
 def record_ip_event(ip: str, service: str, log_type: str) -> None:
-    """Enregistre une tentative hostile associee a une IP."""
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    """
+    Enregistre une tentative hostile associee a une IP dans le bucket du jour.
+    Cree le bucket du jour s'il n'existe pas encore.
+    """
+    now = datetime.now(timezone.utc)
+    today   = now.date().isoformat()
+    now_iso = now.isoformat(timespec="seconds")
     with _ip_lock:
         if ip not in _ip_stats:
-            _ip_stats[ip] = {
+            _ip_stats[ip] = {"buckets": {}}
+        buckets = _ip_stats[ip]["buckets"]
+        if today not in buckets:
+            buckets[today] = {
                 "count":      0,
-                "first_seen": now,
-                "last_seen":  now,
+                "first_seen": now_iso,
+                "last_seen":  now_iso,
                 "services":   {},
                 "types":      {}
             }
-        entry = _ip_stats[ip]
-        entry["count"] += 1
-        entry["last_seen"] = now
-        entry["services"][service] = entry["services"].get(service, 0) + 1
-        entry["types"][log_type]   = entry["types"].get(log_type, 0) + 1
+        bucket = buckets[today]
+        bucket["count"] += 1
+        bucket["last_seen"] = now_iso
+        bucket["services"][service] = bucket["services"].get(service, 0) + 1
+        bucket["types"][log_type]   = bucket["types"].get(log_type, 0) + 1
+
+
+def load_ip_stats() -> None:
+    """Charge les stats IP depuis le fichier JSON persistant au demarrage."""
+    global _ip_stats
+    try:
+        with open(IP_STATS_PATH, "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            _ip_stats = data
+            app.logger.info(f"[INFO] Stats IP chargees : {len(_ip_stats)} IP(s)")
+    except FileNotFoundError:
+        app.logger.info("[INFO] Aucun historique IP existant")
+    except (json.JSONDecodeError, IOError) as exc:
+        app.logger.error(f"[ERROR] Chargement ip_stats : {exc}")
+
+
+def save_ip_stats() -> None:
+    """
+    Persiste les stats IP dans le fichier JSON et purge les buckets expires.
+    Les IPs sans aucun bucket actif sont egalement supprimees.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
+    with _ip_lock:
+        for ip in list(_ip_stats.keys()):
+            buckets = _ip_stats[ip]["buckets"]
+            for day in [d for d in buckets if d < cutoff]:
+                del buckets[day]
+            if not buckets:
+                del _ip_stats[ip]
+        snapshot = {ip: {"buckets": dict(e["buckets"])} for ip, e in _ip_stats.items()}
+
+    try:
+        dirpath = os.path.dirname(IP_STATS_PATH)
+        if dirpath:
+            os.makedirs(dirpath, exist_ok=True)
+        with open(IP_STATS_PATH, "w") as f:
+            json.dump(snapshot, f)
+    except IOError as exc:
+        app.logger.error(f"[ERROR] Sauvegarde ip_stats : {exc}")
+
+
+def ip_stats_saver() -> None:
+    """Thread de sauvegarde periodique des stats IP (toutes les 5 minutes)."""
+    while True:
+        time.sleep(300)
+        save_ip_stats()
 
 
 # ---------------------------------------------------------------------------
@@ -405,10 +505,11 @@ def tail_file(filepath: str, service: str) -> None:
 
 def start_log_watchers() -> None:
     """
-    Demarre tous les threads de surveillance des logs.
+    Demarre tous les threads de surveillance des logs et le thread de sauvegarde des stats IP.
     Tente journalctl en priorite, puis les fichiers de logs en parallele.
     """
-    threading.Thread(target=tail_journald, daemon=True).start()
+    threading.Thread(target=tail_journald,   daemon=True).start()
+    threading.Thread(target=ip_stats_saver,  daemon=True).start()
 
     # Fichiers surveilles en complement (couvrent fail2ban, nftables, acces SSH et WireGuard).
     # syslog exclu : il duplique kern.log pour les messages kernel, generant des doublons.
@@ -531,22 +632,23 @@ def set_config():
 @app.route("/api/ip-stats")
 def api_ip_stats() -> Response:
     """
-    Retourne les statistiques de tentatives hostiles par IP.
+    Retourne les statistiques de tentatives hostiles par IP sur les RETENTION_DAYS derniers jours.
     Triees par nombre de tentatives decroissant, limitees aux 200 premieres.
     """
     with _ip_lock:
-        result = [
-            {
-                "ip":         ip,
-                "count":      data["count"],
-                "first_seen": data["first_seen"],
-                "last_seen":  data["last_seen"],
-                "services":   dict(data["services"]),
-                "types":      dict(data["types"]),
-                "threat":     classify_threat(data)
-            }
-            for ip, data in _ip_stats.items()
-        ]
+        result = []
+        for ip, entry in _ip_stats.items():
+            agg = _aggregate_buckets(entry["buckets"])
+            if agg:
+                result.append({
+                    "ip":         ip,
+                    "count":      agg["count"],
+                    "first_seen": agg["first_seen"],
+                    "last_seen":  agg["last_seen"],
+                    "services":   agg["services"],
+                    "types":      agg["types"],
+                    "threat":     classify_threat(agg)
+                })
     result.sort(key=lambda x: x["count"], reverse=True)
     return jsonify(result[:200])
 
@@ -578,6 +680,9 @@ def test_email():
 
 if __name__ == "__main__":
     load_config()
+    load_ip_stats()
+    # Sauvegarde des stats IP a l'arret propre du processus
+    atexit.register(save_ip_stats)
     start_log_watchers()
     app.logger.info("[INFO] MonitorIA demarre sur le port 8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)

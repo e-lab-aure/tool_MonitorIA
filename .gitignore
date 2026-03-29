@@ -1,5 +1,6 @@
-# Configuration sensible (contient le mot de passe SMTP)
+# Donnees persistantes (configuration SMTP et historique IP)
 config/config.json
+config/ip_stats.json
 
 # Environnements Python
 __pycache__/
