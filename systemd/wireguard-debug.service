@@ -16,7 +16,10 @@
 
 [Unit]
 Description=Activation des logs debug du module WireGuard
-After=sys-kernel-debug.mount
+# Doit demarrer APRES wg-quick pour que le module wireguard.ko soit deja charge
+# en memoire. Sans cela, l'ecriture dans dynamic_debug/control reussit mais n'a
+# aucun effet car le module n'est pas encore present dans la table kernel.
+After=sys-kernel-debug.mount wg-quick@wg0.service
 ConditionPathExists=/sys/kernel/debug/dynamic_debug/control
 
 [Service]
