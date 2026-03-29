@@ -11,11 +11,17 @@ import smtplib
 import threading
 import subprocess
 import time
+import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, Response, jsonify, request, stream_with_context
 
 app = Flask(__name__)
+
+# Flask passe le logger en WARNING par defaut - forcer INFO pour voir les
+# messages de demarrage des threads de surveillance dans podman logs.
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+app.logger.setLevel(logging.INFO)
 
 # --- Configuration ---
 
@@ -106,10 +112,12 @@ LOG_PATTERNS = [
     },
     {
         # Autres evenements generiques du module WireGuard ou du service wg-quick.
-        # Couvre : cookie response, no route, keypair, peer, session, interface, etc.
+        # wg-quick\S* matche le nom de processus tel que journald le formate (ex: wg-quick[1234]:),
+        # ce qui couvre les commandes emises par wg-quick sans mot-cle supplementaire.
         "id": "wireguard",
         "regex": re.compile(
-            r"(wireguard|wg-quick|wg\d+).*(handshake|peer|session|allowed ip|interface|"
+            r"wg-quick\S*|"
+            r"(wireguard|wg\d+).*(handshake|peer|session|allowed ip|interface|"
             r"keypair|endpoint|roaming|destroying|cookie|no route)",
             re.IGNORECASE
         ),
