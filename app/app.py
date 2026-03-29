@@ -8,7 +8,9 @@ import os
 import re
 import json
 import queue
+import signal
 import smtplib
+import sys
 import threading
 import subprocess
 import time
@@ -678,10 +680,23 @@ def test_email():
         return jsonify({"error": str(exc)}), 500
 
 
+def _handle_shutdown(signum, frame) -> None:
+    """
+    Handler SIGTERM/SIGINT : sauvegarde les stats IP avant de quitter.
+    Necessaire car Podman envoie SIGTERM au container ; sans ce handler,
+    Flask ne quitte pas proprement et atexit n'est jamais declenche.
+    """
+    app.logger.info(f"[INFO] Signal {signum} recu - sauvegarde des stats IP et arret")
+    save_ip_stats()
+    sys.exit(0)
+
+
 if __name__ == "__main__":
     load_config()
     load_ip_stats()
-    # Sauvegarde des stats IP a l'arret propre du processus
+    # Sauvegarde des stats IP sur SIGTERM (arret Podman) et SIGINT (Ctrl+C)
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT,  _handle_shutdown)
     atexit.register(save_ip_stats)
     start_log_watchers()
     app.logger.info("[INFO] MonitorIA demarre sur le port 8080")
