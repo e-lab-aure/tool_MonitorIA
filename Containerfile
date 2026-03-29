@@ -7,11 +7,12 @@ LABEL maintainer="MonitorIA" \
 
 WORKDIR /app
 
-# Installation de systemd pour disposer du binaire journalctl.
-# Necessaire sur les systemes sans auth.log (journald pur, sans rsyslog).
+# Installation de systemd (binaire journalctl) et curl (HEALTHCHECK).
 # systemd ne tourne pas comme PID 1 - seul le binaire journalctl est utilise.
+# curl sert uniquement a la sonde de sante du container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY app/requirements.txt .
@@ -24,6 +25,11 @@ COPY app/ .
 RUN mkdir -p /app/config
 
 EXPOSE 8080
+
+# Sonde de sante : interroge /health toutes les 30s.
+# Si 3 echecs consecutifs (timeout 5s chacun), le container passe en "unhealthy".
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Lancement du serveur Flask en mode multithreade
 CMD ["python", "app.py"]

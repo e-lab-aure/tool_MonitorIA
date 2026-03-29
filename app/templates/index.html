@@ -155,15 +155,15 @@
         .log-line:hover { background: #0d0d0d; }
 
         /* Couleurs par type d'evenement */
-        .log-line.normal    { color: #909090; }
-        .log-line.failure   { color: #ff3333; border-color: #cc1111; }
-        .log-line.success   { color: #33ff55; border-color: #22aa33; }
+        .log-line.normal            { color: #909090; }
+        .log-line.failure           { color: #ff3333; border-color: #cc1111; }
+        .log-line.success           { color: #33ff55; border-color: #22aa33; }
         .log-line.wireguard         { color: #55aaff; border-color: #2266cc; }
         .log-line.wireguard_success { color: #33ffcc; border-color: #11aa88; }
         .log-line.wireguard_failure { color: #ff6633; border-color: #cc3311; }
-        .log-line.ban       { color: #ff9900; border-color: #bb6600; }
-        .log-line.unban     { color: #ffee00; border-color: #ccaa00; }
-        .log-line.nftables  { color: #dd66ff; border-color: #9922bb; }
+        .log-line.ban               { color: #ff9900; border-color: #bb6600; }
+        .log-line.unban             { color: #ffee00; border-color: #ccaa00; }
+        .log-line.nftables          { color: #dd66ff; border-color: #9922bb; }
 
         .log-ts   { flex-shrink:0; min-width:145px; padding:0 8px 0 14px; opacity:0.5; }
         .log-svc  { flex-shrink:0; min-width:80px;  padding-right:10px;  opacity:0.75; }
@@ -301,8 +301,8 @@
             letter-spacing: 1px;
             transition: all 0.2s;
         }
-        .btn-modal:hover     { border-color: #444; color: #999; }
-        .btn-modal.close     { flex: 0 0 auto; padding: 7px 14px; }
+        .btn-modal:hover      { border-color: #444; color: #999; }
+        .btn-modal.close      { flex: 0 0 auto; padding: 7px 14px; }
         .btn-modal.close:hover { border-color: #441111; color: #cc3333; }
 
         /* --- Panneau IP Stats --- */
@@ -379,6 +379,10 @@
         .ip-meta .svc { color: #3a3a3a; }
 
         .ip-empty { padding: 28px 12px; font-size: 10px; color: #222; text-align: center; letter-spacing: 1px; }
+        .ip-error { padding: 28px 12px; font-size: 10px; color: #441111; text-align: center; letter-spacing: 1px; }
+
+        /* Etat de chargement du bouton refresh */
+        .btn.loading { opacity: 0.5; cursor: default; }
     </style>
 </head>
 <body>
@@ -399,14 +403,15 @@
         <button class="filter-btn" data-filter="WireGuard">WIREGUARD</button>
         <button class="filter-btn" data-filter="fail2ban">FAIL2BAN</button>
         <button class="filter-btn" data-filter="nftables">NFTABLES</button>
-        <input type="text" class="search-input" id="search-input" placeholder="RECHERCHER...">
+        <input type="text" class="search-input" id="search-input" placeholder="RECHERCHER...  [ / ]">
     </div>
 
     <div class="actions">
-        <button class="btn" id="btn-scroll" title="Activer/desactiver le scroll automatique">AUTO-SCROLL</button>
-        <button class="btn" id="btn-clear" title="Effacer les logs affiches">EFFACER</button>
-        <button class="btn" id="btn-ips" title="Statistiques par IP">IPS</button>
-        <button class="btn" id="btn-email" title="Configurer les alertes par email">ALERTES</button>
+        <button class="btn" id="btn-scroll"  title="Activer/desactiver le scroll automatique">AUTO-SCROLL</button>
+        <button class="btn" id="btn-clear"   title="Effacer les logs affiches">EFFACER</button>
+        <button class="btn" id="btn-export"  title="Exporter les evenements recents en CSV">EXPORTER</button>
+        <button class="btn" id="btn-ips"     title="Statistiques par IP">IPS</button>
+        <button class="btn" id="btn-email"   title="Configurer les alertes par email">ALERTES</button>
     </div>
 </header>
 
@@ -502,16 +507,22 @@
 </div>
 
 <script>
-    // --- Etat global ---
+    // ---------------------------------------------------------------------------
+    // Etat global
+    // ---------------------------------------------------------------------------
     const state = {
         autoScroll:   true,
         activeFilter: 'all',
         searchQuery:  '',
         emailEnabled: false,
-        counts: { failure: 0, success: 0, ban: 0, total: 0 }
+        counts: { failure: 0, success: 0, ban: 0, total: 0 },
+        // Titre original pour restaurer apres notification
+        baseTitle: 'MonitorIA'
     };
 
-    // --- Elements DOM frequemment utilises ---
+    // ---------------------------------------------------------------------------
+    // Elements DOM frequemment utilises
+    // ---------------------------------------------------------------------------
     const logContainer  = document.getElementById('log-container');
     const statusDot     = document.getElementById('status-dot');
     const statusText    = document.getElementById('status-text');
@@ -521,15 +532,21 @@
     const btnScroll     = document.getElementById('btn-scroll');
     const searchInput   = document.getElementById('search-input');
 
-    // --- Connexion SSE ---
-    let evtSource = null;
+    // ---------------------------------------------------------------------------
+    // Connexion SSE avec reconnexion exponentielle
+    // ---------------------------------------------------------------------------
+    let evtSource     = null;
+    let reconnectDelay = 2000;   // Delai initial en ms
+    const RECONNECT_MAX = 30000; // Plafond a 30s
 
     function connect() {
         evtSource = new EventSource('/stream');
 
         evtSource.onopen = () => {
-            statusDot.className = 'status-dot connected';
+            statusDot.className  = 'status-dot connected';
             statusText.textContent = 'connecte';
+            // Reinitialiser le backoff apres connexion reussie
+            reconnectDelay = 2000;
         };
 
         evtSource.onmessage = (e) => {
@@ -539,53 +556,82 @@
         };
 
         evtSource.onerror = () => {
-            statusDot.className = 'status-dot reconnecting';
-            statusText.textContent = 'reconnexion...';
+            statusDot.className    = 'status-dot reconnecting';
+            statusText.textContent = 'reconnexion dans ' + Math.round(reconnectDelay / 1000) + 's...';
             evtSource.close();
-            setTimeout(connect, 3000);
+            setTimeout(() => {
+                connect();
+            }, reconnectDelay);
+            // Backoff exponentiel avec plafond
+            reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX);
         };
     }
 
-    // --- Filtre combine : service + recherche textuelle ---
+    // ---------------------------------------------------------------------------
+    // Notification dans le titre du navigateur sur evenement hostile
+    // ---------------------------------------------------------------------------
+    let titleFlashTimer = null;
+
+    function flashTitle(type) {
+        // Ne notifier que pour les evenements importants
+        if (!['failure', 'wireguard_failure', 'ban'].includes(type)) return;
+        // Ne pas re-flasher si deja en cours
+        if (titleFlashTimer) return;
+
+        const label = type === 'ban' ? 'BAN' : 'ALERTE';
+        document.title = '! ' + label + ' - ' + state.baseTitle;
+        titleFlashTimer = setTimeout(() => {
+            document.title = state.baseTitle;
+            titleFlashTimer = null;
+        }, 4000);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Filtre combine : service + recherche textuelle
+    // ---------------------------------------------------------------------------
     function matchesFilters(row) {
         const serviceOk = state.activeFilter === 'all' || row.dataset.service === state.activeFilter;
         const searchOk  = !state.searchQuery || row.dataset.text.includes(state.searchQuery);
         return serviceOk && searchOk;
     }
 
-    // --- Affichage d'une ligne de log (prepend : plus recent en premier) ---
+    // ---------------------------------------------------------------------------
+    // Affichage d'une ligne de log (prepend : plus recent en premier)
+    // ---------------------------------------------------------------------------
     function appendLog(entry) {
-        // Compteurs (independants des filtres actifs)
+        // Compteurs independants des filtres actifs
         state.counts.total++;
         if (entry.type === 'failure' || entry.type === 'wireguard_failure') state.counts.failure++;
         else if (entry.type === 'success' || entry.type === 'wireguard_success') state.counts.success++;
         else if (entry.type === 'ban' || entry.type === 'unban') state.counts.ban++;
         refreshCounts();
 
-        // Construction de la ligne
+        // Notification dans le titre si la page n'est pas au premier plan
+        if (document.hidden) flashTitle(entry.type);
+
+        // Construction de la ligne via le DOM (jamais innerHTML avec des donnees externes)
         const row = document.createElement('div');
-        row.className = 'log-line ' + (entry.type || 'normal');
+        row.className       = 'log-line ' + (entry.type || 'normal');
         row.dataset.service = entry.service;
         // Texte normalise pour la recherche (evite de relire le DOM a chaque frappe)
         row.dataset.text = entry.line.toLowerCase();
 
         const ts = document.createElement('span');
-        ts.className = 'log-ts';
+        ts.className   = 'log-ts';
         ts.textContent = entry.timestamp;
 
         const svc = document.createElement('span');
-        svc.className = 'log-svc';
+        svc.className   = 'log-svc';
         svc.textContent = '[' + entry.service + ']';
 
         const txt = document.createElement('span');
-        txt.className = 'log-text';
+        txt.className   = 'log-text';
         txt.textContent = entry.line;
 
         row.appendChild(ts);
         row.appendChild(svc);
         row.appendChild(txt);
 
-        // Application des filtres combines (service + recherche)
         row.style.display = matchesFilters(row) ? 'flex' : 'none';
 
         // Insertion en tete : les plus recents apparaissent en haut
@@ -596,10 +642,7 @@
             logContainer.removeChild(logContainer.lastChild);
         }
 
-        // Auto-scroll maintient le haut de la liste (logs les plus recents)
-        if (state.autoScroll) {
-            logContainer.scrollTop = 0;
-        }
+        if (state.autoScroll) logContainer.scrollTop = 0;
     }
 
     function refreshCounts() {
@@ -609,7 +652,9 @@
         document.getElementById('cnt-total').textContent   = state.counts.total;
     }
 
-    // --- Filtres de service ---
+    // ---------------------------------------------------------------------------
+    // Filtres de service
+    // ---------------------------------------------------------------------------
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -621,7 +666,9 @@
         });
     });
 
-    // --- Recherche textuelle ---
+    // ---------------------------------------------------------------------------
+    // Recherche textuelle
+    // ---------------------------------------------------------------------------
     searchInput.addEventListener('input', () => {
         state.searchQuery = searchInput.value.toLowerCase().trim();
         searchInput.classList.toggle('active', state.searchQuery.length > 0);
@@ -639,32 +686,63 @@
         }
     });
 
-    // --- Auto-scroll (les nouveaux logs arrivent en haut) ---
+    // ---------------------------------------------------------------------------
+    // Raccourcis clavier
+    // ---------------------------------------------------------------------------
+    document.addEventListener('keydown', (e) => {
+        // "/" pour ouvrir la recherche (hors champs de saisie)
+        if (e.key === '/' && document.activeElement.tagName !== 'INPUT'
+                          && document.activeElement.tagName !== 'SELECT'
+                          && !overlay.classList.contains('open')) {
+            e.preventDefault();
+            searchInput.focus();
+        }
+    });
+
+    // ---------------------------------------------------------------------------
+    // Auto-scroll
+    // ---------------------------------------------------------------------------
     btnScroll.addEventListener('click', () => {
         state.autoScroll = !state.autoScroll;
-        btnScroll.style.color = state.autoScroll ? '' : '#cc2222';
+        btnScroll.style.color       = state.autoScroll ? '' : '#cc2222';
         btnScroll.style.borderColor = state.autoScroll ? '' : '#441111';
         if (state.autoScroll) logContainer.scrollTop = 0;
     });
 
     // Desactiver l'auto-scroll si l'utilisateur descend dans les anciens logs
     logContainer.addEventListener('scroll', () => {
-        const atTop = logContainer.scrollTop <= 30;
-        if (!atTop && state.autoScroll) {
-            state.autoScroll = false;
-            btnScroll.style.color = '#cc2222';
+        if (logContainer.scrollTop > 30 && state.autoScroll) {
+            state.autoScroll            = false;
+            btnScroll.style.color       = '#cc2222';
             btnScroll.style.borderColor = '#441111';
         }
     });
 
-    // --- Effacement ---
+    // ---------------------------------------------------------------------------
+    // Effacement
+    // ---------------------------------------------------------------------------
     document.getElementById('btn-clear').addEventListener('click', () => {
         logContainer.innerHTML = '';
         state.counts = { failure: 0, success: 0, ban: 0, total: 0 };
         refreshCounts();
     });
 
-    // --- Panneau IP Stats ---
+    // ---------------------------------------------------------------------------
+    // Export CSV
+    // ---------------------------------------------------------------------------
+    document.getElementById('btn-export').addEventListener('click', () => {
+        // Declenchement d'un telechargement via lien temporaire
+        const a = document.createElement('a');
+        a.href     = '/api/logs/export';
+        a.download = 'monitoria_export.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    });
+
+    // ---------------------------------------------------------------------------
+    // Panneau IP Stats
+    // ---------------------------------------------------------------------------
     const ipPanel      = document.getElementById('ip-panel');
     const ipList       = document.getElementById('ip-list');
     const ipSummary    = document.getElementById('ip-summary');
@@ -674,7 +752,7 @@
 
     const THREAT_LABEL = { brute_force: 'BRUTE', scan: 'SCAN', probe: 'PROBE' };
 
-    // Formate un timestamp ISO en temps relatif (ex: "5m", "2h", "3j")
+    /** Formate un timestamp ISO en temps relatif (ex: "5m", "2h", "3j"). */
     function relativeTime(iso) {
         const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
         if (diff < 60)    return diff + 's';
@@ -683,55 +761,109 @@
         return Math.floor(diff / 86400) + 'j';
     }
 
-    // Construit et injecte le contenu du panneau depuis les donnees de l'API
+    /** Construit et injecte le contenu du panneau IP via le DOM. */
     function renderIpStats(data) {
-        const total     = data.reduce((s, d) => s + d.count, 0);
-        const bruteCnt  = data.filter(d => d.threat === 'brute_force').length;
-        const scanCnt   = data.filter(d => d.threat === 'scan').length;
-        ipSummary.textContent = data.length + ' IP(s)  |  ' + total + ' evenements'
-            + (bruteCnt ? '  |  ' + bruteCnt + ' brute' : '')
-            + (scanCnt  ? '  |  ' + scanCnt  + ' scan'  : '');
+        const total    = data.reduce((s, d) => s + d.count, 0);
+        const bruteCnt = data.filter(d => d.threat === 'brute_force').length;
+        const scanCnt  = data.filter(d => d.threat === 'scan').length;
+
+        let summary = data.length + ' IP(s)  |  ' + total + ' evenements';
+        if (bruteCnt) summary += '  |  ' + bruteCnt + ' brute';
+        if (scanCnt)  summary += '  |  ' + scanCnt  + ' scan';
+        ipSummary.textContent = summary;
+
+        ipList.innerHTML = '';
 
         if (!data.length) {
-            ipList.innerHTML = '<div class="ip-empty">AUCUNE ACTIVITE HOSTILE DETECTEE</div>';
+            const empty = document.createElement('div');
+            empty.className   = 'ip-empty';
+            empty.textContent = 'AUCUNE ACTIVITE HOSTILE DETECTEE';
+            ipList.appendChild(empty);
             return;
         }
 
         const maxCount = data[0].count;
-        ipList.innerHTML = '';
         data.forEach(d => {
-            const svcStr = Object.entries(d.services)
+            const svcParts = Object.entries(d.services)
                 .sort((a, b) => b[1] - a[1])
-                .map(([k, v]) => k + ':' + v)
-                .join('  ');
+                .map(([k, v]) => k + ':' + v);
             const pct = Math.max(4, Math.round(d.count / maxCount * 100));
 
+            // Badge de menace
+            const badge = document.createElement('span');
+            badge.className   = 'ip-badge ' + d.threat;
+            badge.textContent = THREAT_LABEL[d.threat] || d.threat.toUpperCase();
+
+            // Adresse IP
+            const addr = document.createElement('span');
+            addr.className   = 'ip-addr';
+            addr.textContent = d.ip;
+
+            // Compteur
+            const count = document.createElement('span');
+            count.className   = 'ip-count ' + d.threat;
+            count.textContent = d.count;
+
+            // Ligne du haut
+            const top = document.createElement('div');
+            top.className = 'ip-row-top';
+            top.appendChild(badge);
+            top.appendChild(addr);
+            top.appendChild(count);
+
+            // Barre de progression
+            const barFill = document.createElement('div');
+            barFill.className        = 'ip-bar-fill ' + d.threat;
+            barFill.style.width      = pct + '%';
+            const bar = document.createElement('div');
+            bar.className = 'ip-bar';
+            bar.appendChild(barFill);
+
+            // Meta (services, temps)
+            const svcSpan = document.createElement('span');
+            svcSpan.className   = 'svc';
+            svcSpan.textContent = svcParts.join('  ');
+
+            const firstSpan = document.createElement('span');
+            firstSpan.textContent = 'debut ' + relativeTime(d.first_seen);
+
+            const lastSpan = document.createElement('span');
+            lastSpan.textContent = 'vu ' + relativeTime(d.last_seen);
+
+            const meta = document.createElement('div');
+            meta.className = 'ip-meta';
+            meta.appendChild(svcSpan);
+            meta.appendChild(firstSpan);
+            meta.appendChild(lastSpan);
+
+            // Ligne complete
             const row = document.createElement('div');
             row.className = 'ip-row';
-            row.innerHTML =
-                '<div class="ip-row-top">'
-                +   '<span class="ip-badge ' + d.threat + '">' + THREAT_LABEL[d.threat] + '</span>'
-                +   '<span class="ip-addr">'  + d.ip    + '</span>'
-                +   '<span class="ip-count '  + d.threat + '">' + d.count + '</span>'
-                + '</div>'
-                + '<div class="ip-bar"><div class="ip-bar-fill ' + d.threat
-                +   '" style="width:' + pct + '%"></div></div>'
-                + '<div class="ip-meta">'
-                +   '<span class="svc">' + svcStr + '</span>'
-                +   '<span>debut ' + relativeTime(d.first_seen) + '</span>'
-                +   '<span>vu ' + relativeTime(d.last_seen) + '</span>'
-                + '</div>';
+            row.appendChild(top);
+            row.appendChild(bar);
+            row.appendChild(meta);
             ipList.appendChild(row);
         });
     }
 
-    // Interroge l'API et met a jour l'affichage
+    /** Interroge l'API et met a jour l'affichage du panneau IP. */
     async function fetchIpStats() {
+        btnIpRefresh.classList.add('loading');
+        btnIpRefresh.disabled = true;
         try {
-            const r    = await fetch('/api/ip-stats');
-            const data = await r.json();
-            renderIpStats(data);
-        } catch (e) { /* erreur reseau : on silencieuse */ }
+            const r = await fetch('/api/ip-stats');
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            renderIpStats(await r.json());
+        } catch (e) {
+            ipList.innerHTML = '';
+            const errDiv = document.createElement('div');
+            errDiv.className   = 'ip-error';
+            errDiv.textContent = 'ERREUR : impossible de charger les stats IP';
+            ipList.appendChild(errDiv);
+        } finally {
+            btnIpRefresh.classList.remove('loading');
+            btnIpRefresh.disabled = false;
+        }
     }
 
     // Toggle ouverture / fermeture du panneau
@@ -749,10 +881,12 @@
 
     btnIpRefresh.addEventListener('click', fetchIpStats);
 
-    // --- Modal email ---
+    // ---------------------------------------------------------------------------
+    // Modal email
+    // ---------------------------------------------------------------------------
     function showFeedback(msg, isErr = false) {
         feedback.textContent = msg;
-        feedback.className = 'feedback' + (isErr ? ' err' : '');
+        feedback.className   = 'feedback' + (isErr ? ' err' : '');
         setTimeout(() => { feedback.textContent = ''; feedback.className = 'feedback'; }, 4000);
     }
 
@@ -761,27 +895,27 @@
             const resp = await fetch('/api/config');
             const cfg  = await resp.json();
 
-            document.getElementById('smtp-host').value = cfg.smtp_host || '';
-            document.getElementById('smtp-port').value = cfg.smtp_port || 587;
-            document.getElementById('smtp-user').value = cfg.smtp_user || '';
-            document.getElementById('recipient').value  = cfg.recipient || '';
-            document.getElementById('smtp-pass').value  = '';
+            document.getElementById('smtp-host').value     = cfg.smtp_host || '';
+            document.getElementById('smtp-port').value     = cfg.smtp_port || 587;
+            document.getElementById('smtp-user').value     = cfg.smtp_user || '';
+            document.getElementById('recipient').value     = cfg.recipient  || '';
+            document.getElementById('smtp-pass').value     = '';
+            document.getElementById('smtp-security').value = cfg.smtp_security || 'starttls';
 
             const alertOn = cfg.alert_on || ['success'];
-            document.getElementById('chk-success').checked  = alertOn.includes('success');
-            document.getElementById('chk-failure').checked  = alertOn.includes('failure');
-            document.getElementById('chk-ban').checked      = alertOn.includes('ban');
-            document.getElementById('smtp-security').value  = cfg.smtp_security || 'starttls';
+            document.getElementById('chk-success').checked = alertOn.includes('success');
+            document.getElementById('chk-failure').checked = alertOn.includes('failure');
+            document.getElementById('chk-ban').checked     = alertOn.includes('ban');
 
-            state.emailEnabled = cfg.enabled || false;
-            toggleEnabled.className = 'toggle-switch' + (state.emailEnabled ? ' on' : '');
+            state.emailEnabled          = cfg.enabled || false;
+            toggleEnabled.className     = 'toggle-switch' + (state.emailEnabled ? ' on' : '');
         } catch (e) {
             showFeedback('Erreur chargement configuration.', true);
         }
     }
 
     toggleEnabled.addEventListener('click', () => {
-        state.emailEnabled = !state.emailEnabled;
+        state.emailEnabled      = !state.emailEnabled;
         toggleEnabled.className = 'toggle-switch' + (state.emailEnabled ? ' on' : '');
     });
 
@@ -796,6 +930,13 @@
 
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) overlay.classList.remove('open');
+    });
+
+    // Fermer la modal avec Echap
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && overlay.classList.contains('open')) {
+            overlay.classList.remove('open');
+        }
     });
 
     document.getElementById('btn-save').addEventListener('click', async () => {
@@ -825,11 +966,8 @@
             if (res.status === 'ok') {
                 showFeedback('Configuration sauvegardee.');
                 document.getElementById('smtp-pass').value = '';
-
-                // Mise a jour visuelle du bouton alertes
                 const btn = document.getElementById('btn-email');
-                if (state.emailEnabled) btn.classList.add('alert-active');
-                else btn.classList.remove('alert-active');
+                btn.classList.toggle('alert-active', state.emailEnabled);
             } else {
                 showFeedback(res.error || 'Erreur inconnue.', true);
             }
@@ -850,7 +988,9 @@
         }
     });
 
-    // --- Demarrage ---
+    // ---------------------------------------------------------------------------
+    // Demarrage
+    // ---------------------------------------------------------------------------
     connect();
 </script>
 </body>

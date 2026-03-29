@@ -4,6 +4,8 @@ Surveille les logs SSH, WireGuard, fail2ban et nftables via SSE.
 """
 
 import atexit
+import csv
+import io
 import os
 import re
 import json
@@ -15,6 +17,7 @@ import threading
 import subprocess
 import time
 import logging
+from collections import deque
 from datetime import datetime, timezone, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -27,36 +30,62 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 app.logger.setLevel(logging.INFO)
 
-# --- Configuration ---
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-CONFIG_PATH    = os.environ.get("CONFIG_PATH",    "/app/config/config.json")
-IP_STATS_PATH  = os.environ.get("IP_STATS_PATH",  "/app/config/ip_stats.json")
+CONFIG_PATH   = os.environ.get("CONFIG_PATH",   "/app/config/config.json")
+IP_STATS_PATH = os.environ.get("IP_STATS_PATH", "/app/config/ip_stats.json")
 
-# Duree de retention des stats IP : les buckets plus vieux sont purges
+# Duree de retention des stats IP : buckets plus vieux purges a la sauvegarde
 RETENTION_DAYS = 7
+
+# Seuils de classification des menaces par IP
+BRUTE_FORCE_MIN_COUNT = 20  # Tentatives sur un seul service -> brute force
+SCAN_MIN_SERVICES     = 2   # Services distincts cibles     -> scan
+
+# Delai minimum entre deux alertes mail du meme type (evite le flood)
+ALERT_COOLDOWN_SECONDS = 300  # 5 minutes
+
+# Nombre maximum d'evenements conserves en memoire pour l'export CSV
+EVENT_BUFFER_MAXLEN = 1000
 
 # Port UDP WireGuard (51820 par defaut, surchargeable via variable d'environnement)
 WG_PORT = re.escape(os.environ.get("WG_PORT", "51820"))
 
 DEFAULT_CONFIG = {
-    "enabled": False,
-    "smtp_host": "",
-    "smtp_port": 587,
+    "enabled":       False,
+    "smtp_host":     "",
+    "smtp_port":     587,
     "smtp_security": "starttls",
-    "smtp_user": "",
-    "smtp_pass": "",
-    "recipient": "",
-    "alert_on": ["success"]
+    "smtp_user":     "",
+    "smtp_pass":     "",
+    "recipient":     "",
+    "alert_on":      ["success"]
 }
 
-email_config = DEFAULT_CONFIG.copy()
+email_config: dict = DEFAULT_CONFIG.copy()
 
-# --- Clients SSE connectes ---
+# Heure de demarrage de l'application (pour l'endpoint /health)
+_start_time = datetime.now(timezone.utc)
+
+# ---------------------------------------------------------------------------
+# Clients SSE connectes
+# ---------------------------------------------------------------------------
 
 clients: list[queue.Queue] = []
 clients_lock = threading.Lock()
 
-# --- Patterns de classification des logs ---
+# ---------------------------------------------------------------------------
+# Buffer circulaire des evenements recents (export CSV)
+# ---------------------------------------------------------------------------
+
+_event_buffer: deque = deque(maxlen=EVENT_BUFFER_MAXLEN)
+_buffer_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Patterns de classification des logs
+# ---------------------------------------------------------------------------
 
 LOG_PATTERNS = [
     {
@@ -80,15 +109,12 @@ LOG_PATTERNS = [
         "service": "SSH"
     },
     {
-        # Handshake avec un pair connu : connexion WireGuard aboutie.
-        # "Receiving handshake initiation from peer N" = pair authentifie (cle connue).
-        # "Sending handshake initiation to peer N"    = keepalive ou reconnexion sortante.
-        # Connexion WireGuard etablie avec un pair connu.
+        # Connexion WireGuard aboutie :
         # "Sending handshake response" = serveur a authentifie le pair et repond.
         # "Keypair created"            = tunnel chiffre operationnel.
         # "Sending handshake initiation" = reconnexion / keepalive sortant.
         # NB : "Receiving handshake initiation" est le DEBUT du handshake (pas encore etabli)
-        #      → tombe dans le pattern generique ci-dessous.
+        #      -> tombe dans le pattern generique ci-dessous.
         "id": "wireguard_success",
         "regex": re.compile(
             r"(wireguard|wg\d+).*(Sending handshake response to peer|"
@@ -99,11 +125,11 @@ LOG_PATTERNS = [
         "service": "WireGuard"
     },
     {
-        # Tentative invalide ou paquet rejete.
-        # "Invalid handshake initiation from"          = source inconnue (aucun pair correspondant).
-        # "Invalid MAC of handshake, dropping packet"  = MAC incorrecte (paquet corrompu ou usurpe).
-        # "unallowed src IP"                           = paquet depuis une IP non declaree pour ce pair.
-        # "replay attack"                              = paquet rejoue detecte.
+        # Tentative invalide ou paquet rejete :
+        # "Invalid handshake initiation from"         = source inconnue (aucun pair correspondant).
+        # "Invalid MAC of handshake, dropping packet" = MAC incorrecte (paquet corrompu ou usurpe).
+        # "unallowed src IP"                          = paquet depuis une IP non declaree pour ce pair.
+        # "replay attack"                             = paquet rejoue detecte.
         "id": "wireguard_failure",
         "regex": re.compile(
             r"(wireguard|wg\d+).*(Invalid handshake initiation|Invalid MAC of handshake|"
@@ -114,8 +140,8 @@ LOG_PATTERNS = [
         "service": "WireGuard"
     },
     {
-        # Paquets UDP vers le port WireGuard loggues par nftables
-        # Correspond au prefixe recommande [wireguard-*] ou a DPT=<port> PROTO=UDP
+        # Paquets UDP vers le port WireGuard loggues par nftables.
+        # Correspond au prefixe recommande [wireguard-*] ou a DPT=<port> PROTO=UDP.
         "id": "wireguard_nftables",
         "regex": re.compile(
             rf"\[wireguard[^\]]*\]|(?:PROTO=UDP.*\bDPT={WG_PORT}\b|\bDPT={WG_PORT}\b.*PROTO=UDP)",
@@ -162,7 +188,7 @@ LOG_PATTERNS = [
 def classify_line(line: str) -> tuple[str, str]:
     """
     Identifie le type et le service associe a une ligne de log.
-    Retourne (type, service) parmi les patterns definis.
+    Retourne (type, service) parmi les patterns definis, ou ('normal', 'system').
     """
     for pattern in LOG_PATTERNS:
         if pattern["regex"].search(line):
@@ -172,9 +198,13 @@ def classify_line(line: str) -> tuple[str, str]:
 
 def broadcast(entry: dict) -> None:
     """
-    Diffuse un evenement de log a tous les clients SSE actifs.
-    Supprime les queues des clients deconnectes (queue pleine).
+    Diffuse un evenement de log a tous les clients SSE actifs et l'enregistre
+    dans le buffer circulaire (utilise pour l'export CSV).
+    Supprime les queues des clients deconnectes (queue pleine = client lent ou parti).
     """
+    with _buffer_lock:
+        _event_buffer.appendleft(entry)
+
     with clients_lock:
         dead = []
         for q in clients:
@@ -184,6 +214,15 @@ def broadcast(entry: dict) -> None:
                 dead.append(q)
         for q in dead:
             clients.remove(q)
+
+
+# ---------------------------------------------------------------------------
+# Alertes mail
+# ---------------------------------------------------------------------------
+
+_alert_lock     = threading.Lock()
+# Derniere alerte envoyee par type d'evenement - evite le flood pendant une attaque
+_alert_cooldown: dict[str, datetime] = {}
 
 
 def smtp_send(msg: MIMEMultipart) -> None:
@@ -217,7 +256,10 @@ def smtp_send(msg: MIMEMultipart) -> None:
 def send_alert(entry: dict) -> None:
     """
     Envoie une alerte mail si l'evenement correspond aux criteres configures.
-    L'envoi est effectue dans un thread separe pour ne pas bloquer le flux de logs.
+    Un cooldown de ALERT_COOLDOWN_SECONDS evite le flood d'emails pour un meme
+    type d'evenement (ex: attaque par brute force SSH generant des centaines
+    d'echecs). L'envoi est effectue dans un thread separe pour ne pas bloquer
+    le flux de logs.
     """
     if not email_config.get("enabled"):
         return
@@ -225,11 +267,19 @@ def send_alert(entry: dict) -> None:
     if entry["type"] not in alert_on:
         return
 
+    # Deduplication : une alerte par type d'evenement max toutes les 5 minutes
+    now = datetime.now(timezone.utc)
+    with _alert_lock:
+        last = _alert_cooldown.get(entry["type"])
+        if last and (now - last).total_seconds() < ALERT_COOLDOWN_SECONDS:
+            return
+        _alert_cooldown[entry["type"]] = now
+
     def _send() -> None:
         try:
             msg = MIMEMultipart()
-            msg["From"] = email_config["smtp_user"]
-            msg["To"] = email_config["recipient"]
+            msg["From"]    = email_config["smtp_user"]
+            msg["To"]      = email_config["recipient"]
             msg["Subject"] = f"[MonitorIA] {entry['service']} - {entry['type'].upper()}"
             body = (
                 f"Evenement detecte sur votre serveur :\n\n"
@@ -264,7 +314,8 @@ _ip_stats: dict = {}
 # Types d'evenements consideres comme hostiles pour le suivi IP
 _HOSTILE_TYPES = frozenset({"failure", "wireguard_failure", "ban", "nftables"})
 
-# Patterns d'extraction de l'IP source selon le format de la ligne
+# Patterns d'extraction de l'IP source selon le format de la ligne.
+# Ordre de priorite decroissante : "from X port" > "from X:port" > SRC=X > Ban/Unban X
 _RE_IP_FROM_PORT = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})\s+port\b', re.IGNORECASE)
 _RE_IP_FROM      = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?\b', re.IGNORECASE)
 _RE_IP_SRC       = re.compile(r'\bSRC=(\d{1,3}(?:\.\d{1,3}){3})\b')
@@ -274,7 +325,7 @@ _RE_IP_BAN       = re.compile(r'\b(?:Ban|Unban)\s+(\d{1,3}(?:\.\d{1,3}){3})\b', 
 def extract_ip(line: str) -> str | None:
     """
     Extrait l'adresse IP source d'une ligne de log.
-    Essaie plusieurs patterns dans l'ordre de specificite.
+    Essaie plusieurs patterns dans l'ordre de specificite decroissante.
     """
     for pattern in (_RE_IP_FROM_PORT, _RE_IP_FROM, _RE_IP_SRC, _RE_IP_BAN):
         m = pattern.search(line)
@@ -286,21 +337,15 @@ def extract_ip(line: str) -> str | None:
 def classify_threat(data: dict) -> str:
     """
     Classe le niveau de menace d'une IP selon ses tentatives :
+    - scan        : plusieurs services cibles (reconnaissance du systeme)
     - brute_force : beaucoup de tentatives concentrees sur un service
-    - scan        : plusieurs services cibles (reconnaissance)
-    - probe       : tentatives isolees
+    - probe       : tentatives isolees ou peu nombreuses
     """
-    count    = data["count"]
-    nb_svc   = sum(1 for v in data["services"].values() if v > 0)
-
-    if nb_svc >= 3:
+    nb_svc = sum(1 for v in data["services"].values() if v > 0)
+    if nb_svc >= SCAN_MIN_SERVICES:
         return "scan"
-    if count >= 20 and nb_svc == 1:
+    if data["count"] >= BRUTE_FORCE_MIN_COUNT:
         return "brute_force"
-    if nb_svc >= 2:
-        return "scan"
-    if count >= 5:
-        return "probe"
     return "probe"
 
 
@@ -347,7 +392,7 @@ def record_ip_event(ip: str, service: str, log_type: str) -> None:
     Enregistre une tentative hostile associee a une IP dans le bucket du jour.
     Cree le bucket du jour s'il n'existe pas encore.
     """
-    now = datetime.now(timezone.utc)
+    now     = datetime.now(timezone.utc)
     today   = now.date().isoformat()
     now_iso = now.isoformat(timespec="seconds")
     with _ip_lock:
@@ -388,6 +433,8 @@ def save_ip_stats() -> None:
     """
     Persiste les stats IP dans le fichier JSON et purge les buckets expires.
     Les IPs sans aucun bucket actif sont egalement supprimees.
+    Utilise une ecriture atomique (fichier temporaire + rename) pour eviter
+    toute corruption du fichier en cas d'arret brutal en cours d'ecriture.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
     with _ip_lock:
@@ -399,14 +446,21 @@ def save_ip_stats() -> None:
                 del _ip_stats[ip]
         snapshot = {ip: {"buckets": dict(e["buckets"])} for ip, e in _ip_stats.items()}
 
+    tmp_path = IP_STATS_PATH + ".tmp"
     try:
         dirpath = os.path.dirname(IP_STATS_PATH)
         if dirpath:
             os.makedirs(dirpath, exist_ok=True)
-        with open(IP_STATS_PATH, "w") as f:
+        with open(tmp_path, "w") as f:
             json.dump(snapshot, f)
+        # Remplacement atomique : jamais de fichier partiellement ecrit visible
+        os.replace(tmp_path, IP_STATS_PATH)
     except IOError as exc:
         app.logger.error(f"[ERROR] Sauvegarde ip_stats : {exc}")
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def ip_stats_saver() -> None:
@@ -417,11 +471,14 @@ def ip_stats_saver() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Traitement des lignes de log
+# ---------------------------------------------------------------------------
 
 def process_line(line: str, fallback_service: str = None) -> None:
     """
     Traite une ligne de log brute : classification, diffusion SSE et alerte mail.
-    fallback_service est utilise si la classification retourne 'system'.
+    fallback_service est utilise si la classification retourne 'system'
+    (utile pour les fichiers de logs generiques comme auth.log).
     """
     line = line.strip()
     if not line:
@@ -438,14 +495,18 @@ def process_line(line: str, fallback_service: str = None) -> None:
             record_ip_event(ip, service, log_type)
 
     entry = {
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "line": line,
-        "type": log_type,
-        "service": service
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "line":      line,
+        "type":      log_type,
+        "service":   service
     }
     broadcast(entry)
     send_alert(entry)
 
+
+# ---------------------------------------------------------------------------
+# Surveillance des sources de logs
+# ---------------------------------------------------------------------------
 
 def tail_journald() -> None:
     """
@@ -453,9 +514,9 @@ def tail_journald() -> None:
     Redemarre automatiquement en cas de crash du processus.
     """
     units = ["-u", "ssh", "-u", "sshd", "-u", "wg-quick@wg0", "-u", "fail2ban"]
-    cmd = ["journalctl", "-f", "-n", "100", "--no-pager", "--output=short-iso"] + units
+    cmd   = ["journalctl", "-f", "-n", "100", "--no-pager", "--output=short-iso"] + units
 
-    app.logger.info(f"[INFO] Demarrage surveillance journalctl")
+    app.logger.info("[INFO] Demarrage surveillance journalctl")
 
     while True:
         try:
@@ -479,20 +540,29 @@ def tail_journald() -> None:
 
 def tail_file(filepath: str, service: str) -> None:
     """
-    Surveille un fichier de log en continu (lecture de fin de fichier).
-    Utilise comme fallback si journalctl est indisponible.
+    Surveille un fichier de log en continu via lecture incrementale.
+    Gere la rotation des fichiers (logrotate) : detecte quand le fichier
+    est remplace et rouvre le nouveau fichier automatiquement.
     """
     app.logger.info(f"[INFO] Surveillance fichier : {filepath}")
 
     while True:
         try:
+            inode_initial = os.stat(filepath).st_ino
             with open(filepath, "r", errors="replace") as f:
-                f.seek(0, 2)
+                f.seek(0, 2)  # Se positionner en fin de fichier
                 while True:
                     line = f.readline()
                     if line:
                         process_line(line, fallback_service=service)
                     else:
+                        # Detecter une rotation : si l'inode a change, rouvrir
+                        try:
+                            if os.stat(filepath).st_ino != inode_initial:
+                                app.logger.info(f"[INFO] Rotation detectee : {filepath}")
+                                break
+                        except FileNotFoundError:
+                            break
                         time.sleep(0.1)
         except FileNotFoundError:
             app.logger.warning(f"[WARNING] Fichier introuvable : {filepath} - nouvelle tentative dans 30s")
@@ -508,25 +578,30 @@ def tail_file(filepath: str, service: str) -> None:
 def start_log_watchers() -> None:
     """
     Demarre tous les threads de surveillance des logs et le thread de sauvegarde des stats IP.
-    Tente journalctl en priorite, puis les fichiers de logs en parallele.
+    journalctl couvre SSH, wg-quick et fail2ban via systemd.
+    Les fichiers de logs completent la couverture pour kern.log (WireGuard/nftables)
+    et auth.log (SSH via PAM, non present dans systemd sur certaines distros).
+    syslog est exclu : il duplique kern.log pour les messages kernel.
+    journalctl -k est exclu : ne trouve pas les fichiers journal dans le container
+    (mismatch machine-id hote/container) ; kern.log couvre le meme contenu via rsyslog.
     """
-    threading.Thread(target=tail_journald,   daemon=True).start()
-    threading.Thread(target=ip_stats_saver,  daemon=True).start()
+    threading.Thread(target=tail_journald,  daemon=True).start()
+    threading.Thread(target=ip_stats_saver, daemon=True).start()
 
-    # Fichiers surveilles en complement (couvrent fail2ban, nftables, acces SSH et WireGuard).
-    # syslog exclu : il duplique kern.log pour les messages kernel, generant des doublons.
-    # journalctl -k est exclu : ne trouve pas les fichiers journal dans le container
-    # (mismatch machine-id hote/container) ; kern.log couvre le meme contenu via rsyslog.
     log_files = [
         ("/var/log/fail2ban.log", "fail2ban"),
-        ("/var/log/auth.log", "SSH"),
-        ("/var/log/secure", "SSH"),
-        ("/var/log/kern.log", "nftables"),
+        ("/var/log/auth.log",     "SSH"),
+        ("/var/log/secure",       "SSH"),
+        ("/var/log/kern.log",     "nftables"),
     ]
     for filepath, service in log_files:
         if os.path.exists(filepath):
             threading.Thread(target=tail_file, args=(filepath, service), daemon=True).start()
 
+
+# ---------------------------------------------------------------------------
+# Configuration email
+# ---------------------------------------------------------------------------
 
 def load_config() -> None:
     """Charge la configuration email depuis le fichier JSON persistant."""
@@ -545,7 +620,9 @@ def load_config() -> None:
 def save_config() -> None:
     """Sauvegarde la configuration email dans le fichier JSON persistant."""
     try:
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        dirpath = os.path.dirname(CONFIG_PATH)
+        if dirpath:
+            os.makedirs(dirpath, exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(email_config, f, indent=2)
         app.logger.info("[INFO] Configuration email sauvegardee")
@@ -553,7 +630,22 @@ def save_config() -> None:
         app.logger.error(f"[ERROR] Sauvegarde configuration : {exc}")
 
 
-# --- Routes Flask ---
+# ---------------------------------------------------------------------------
+# Routes Flask
+# ---------------------------------------------------------------------------
+
+@app.after_request
+def add_security_headers(response: Response) -> Response:
+    """
+    Ajoute les headers de securite HTTP a chaque reponse.
+    Previent le clickjacking, le MIME sniffing et les attaques XSS reflechies.
+    """
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"]         = "DENY"
+    response.headers["X-XSS-Protection"]        = "1; mode=block"
+    response.headers["Referrer-Policy"]          = "strict-origin-when-cross-origin"
+    return response
+
 
 @app.route("/")
 def index():
@@ -561,19 +653,38 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/health")
+def health():
+    """
+    Endpoint de sante de l'application.
+    Utilise par le HEALTHCHECK du Containerfile et les sondes de monitoring externes.
+    """
+    uptime = int((datetime.now(timezone.utc) - _start_time).total_seconds())
+    with clients_lock:
+        nb_clients = len(clients)
+    with _ip_lock:
+        nb_ips = len(_ip_stats)
+    return jsonify({
+        "status":            "ok",
+        "uptime_seconds":    uptime,
+        "clients_connected": nb_clients,
+        "ips_tracked":       nb_ips
+    })
+
+
 @app.route("/stream")
 def stream():
     """
     Endpoint SSE : diffuse les evenements de logs en temps reel.
     Chaque client recoit sa propre queue pour eviter les pertes d'evenements.
+    Un keepalive est envoye toutes les 30s pour maintenir la connexion ouverte.
     """
     client_queue: queue.Queue = queue.Queue(maxsize=200)
 
     with clients_lock:
         clients.append(client_queue)
 
-    active = len(clients)
-    app.logger.info(f"[INFO] Nouveau client SSE connecte ({active} actif(s))")
+    app.logger.info(f"[INFO] Nouveau client SSE connecte ({len(clients)} actif(s))")
 
     def event_stream():
         try:
@@ -582,7 +693,6 @@ def stream():
                     entry = client_queue.get(timeout=30)
                     yield f"data: {json.dumps(entry)}\n\n"
                 except queue.Empty:
-                    # Keepalive pour maintenir la connexion ouverte
                     yield 'data: {"type":"ping"}\n\n'
         finally:
             with clients_lock:
@@ -594,9 +704,9 @@ def stream():
         stream_with_context(event_stream()),
         mimetype="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control":    "no-cache",
             "X-Accel-Buffering": "no",
-            "Connection": "keep-alive"
+            "Connection":       "keep-alive"
         }
     )
 
@@ -622,7 +732,6 @@ def set_config():
     if not data:
         return jsonify({"error": "Corps JSON invalide"}), 400
 
-    # Preservation du mot de passe si non fourni dans la requete
     if not data.get("smtp_pass") and email_config.get("smtp_pass"):
         data["smtp_pass"] = email_config["smtp_pass"]
 
@@ -655,6 +764,28 @@ def api_ip_stats() -> Response:
     return jsonify(result[:200])
 
 
+@app.route("/api/logs/export")
+def export_logs() -> Response:
+    """
+    Exporte les EVENT_BUFFER_MAXLEN derniers evenements au format CSV.
+    Permet l'analyse hors ligne ou l'archivage des evenements recents.
+    """
+    with _buffer_lock:
+        events = list(_event_buffer)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["timestamp", "service", "type", "line"])
+    for e in events:
+        writer.writerow([e["timestamp"], e["service"], e["type"], e["line"]])
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=monitoria_export.csv"}
+    )
+
+
 @app.route("/api/test-email", methods=["POST"])
 def test_email():
     """Envoie un email de test pour valider la configuration SMTP."""
@@ -663,10 +794,13 @@ def test_email():
 
     try:
         msg = MIMEMultipart()
-        msg["From"] = email_config["smtp_user"]
-        msg["To"] = email_config["recipient"]
+        msg["From"]    = email_config["smtp_user"]
+        msg["To"]      = email_config["recipient"]
         msg["Subject"] = "[MonitorIA] Test de configuration"
-        msg.attach(MIMEText("Ceci est un email de test envoye par MonitorIA. La configuration est correcte.", "plain"))
+        msg.attach(MIMEText(
+            "Ceci est un email de test envoye par MonitorIA. La configuration SMTP est correcte.",
+            "plain"
+        ))
         smtp_send(msg)
         app.logger.info("[INFO] Email de test envoye avec succes")
         return jsonify({"status": "ok"})
@@ -679,6 +813,10 @@ def test_email():
         app.logger.error(f"[ERROR] Test email : {exc}")
         return jsonify({"error": str(exc)}), 500
 
+
+# ---------------------------------------------------------------------------
+# Arret propre
+# ---------------------------------------------------------------------------
 
 def _handle_shutdown(signum, frame) -> None:
     """
@@ -694,9 +832,9 @@ def _handle_shutdown(signum, frame) -> None:
 if __name__ == "__main__":
     load_config()
     load_ip_stats()
-    # Sauvegarde des stats IP sur SIGTERM (arret Podman) et SIGINT (Ctrl+C)
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT,  _handle_shutdown)
+    # atexit en dernier recours (arret hors signal, ex: exception non rattrapee)
     atexit.register(save_ip_stats)
     start_log_watchers()
     app.logger.info("[INFO] MonitorIA demarre sur le port 8080")
