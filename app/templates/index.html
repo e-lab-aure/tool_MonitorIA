@@ -304,6 +304,81 @@
         .btn-modal:hover     { border-color: #444; color: #999; }
         .btn-modal.close     { flex: 0 0 auto; padding: 7px 14px; }
         .btn-modal.close:hover { border-color: #441111; color: #cc3333; }
+
+        /* --- Panneau IP Stats --- */
+        .content-area { flex: 1; display: flex; overflow: hidden; }
+
+        .ip-panel {
+            width: 370px;
+            flex-shrink: 0;
+            display: none;
+            flex-direction: column;
+            border-left: 1px solid #141414;
+            background: #090909;
+        }
+        .ip-panel.open { display: flex; }
+
+        .ip-panel-header {
+            padding: 7px 12px;
+            border-bottom: 1px solid #141414;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .ip-panel-title { font-size: 10px; letter-spacing: 2px; color: #444; flex: 1; }
+
+        .ip-panel-summary {
+            padding: 4px 12px;
+            border-bottom: 1px solid #0e0e0e;
+            font-size: 9px;
+            color: #2e2e2e;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+
+        .ip-list { flex: 1; overflow-y: auto; }
+
+        .ip-row {
+            padding: 7px 12px 5px;
+            border-bottom: 1px solid #0e0e0e;
+        }
+        .ip-row:hover { background: #0d0d0d; }
+
+        .ip-row-top {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 3px;
+        }
+        .ip-badge {
+            font-size: 8px;
+            padding: 1px 5px;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .ip-badge.brute_force { background:#2a0808; color:#ff4444; border:1px solid #441111; }
+        .ip-badge.scan        { background:#1e1000; color:#ff8833; border:1px solid #442200; }
+        .ip-badge.probe       { background:#151500; color:#bbaa00; border:1px solid #333300; }
+
+        .ip-addr  { flex: 1; font-size: 12px; color: #c8c8c8; }
+        .ip-count { flex-shrink: 0; font-size: 13px; font-weight: bold; min-width: 28px; text-align: right; }
+        .ip-count.brute_force { color: #ff4444; }
+        .ip-count.scan        { color: #ff8833; }
+        .ip-count.probe       { color: #bbaa00; }
+
+        .ip-bar { height: 2px; background: #151515; margin: 2px 0 4px; border-radius: 1px; overflow: hidden; }
+        .ip-bar-fill { height: 100%; border-radius: 1px; transition: width 0.4s; }
+        .ip-bar-fill.brute_force { background: #ff4444; }
+        .ip-bar-fill.scan        { background: #ff8833; }
+        .ip-bar-fill.probe       { background: #bbaa00; }
+
+        .ip-meta { font-size: 9px; color: #2e2e2e; letter-spacing: 0.3px; }
+        .ip-meta span { margin-right: 10px; }
+        .ip-meta .svc { color: #3a3a3a; }
+
+        .ip-empty { padding: 28px 12px; font-size: 10px; color: #222; text-align: center; letter-spacing: 1px; }
     </style>
 </head>
 <body>
@@ -330,6 +405,7 @@
     <div class="actions">
         <button class="btn" id="btn-scroll" title="Activer/desactiver le scroll automatique">AUTO-SCROLL</button>
         <button class="btn" id="btn-clear" title="Effacer les logs affiches">EFFACER</button>
+        <button class="btn" id="btn-ips" title="Statistiques par IP">IPS</button>
         <button class="btn" id="btn-email" title="Configurer les alertes par email">ALERTES</button>
     </div>
 </header>
@@ -342,8 +418,25 @@
     <div class="stat t">TOTAL <b id="cnt-total">0</b></div>
 </div>
 
-<!-- Flux de logs -->
-<div id="log-container"></div>
+<!-- Zone principale : logs + panneau IP cote a cote -->
+<div class="content-area">
+
+    <!-- Flux de logs -->
+    <div id="log-container"></div>
+
+    <!-- Panneau statistiques par IP (toggle) -->
+    <div id="ip-panel" class="ip-panel">
+        <div class="ip-panel-header">
+            <span class="ip-panel-title">IP STATS</span>
+            <button class="btn" id="btn-ip-refresh" title="Actualiser">REFRESH</button>
+        </div>
+        <div class="ip-panel-summary" id="ip-summary">-</div>
+        <div class="ip-list" id="ip-list">
+            <div class="ip-empty">AUCUNE ACTIVITE HOSTILE DETECTEE</div>
+        </div>
+    </div>
+
+</div>
 
 <!-- Modal configuration email -->
 <div class="overlay" id="overlay">
@@ -570,6 +663,91 @@
         state.counts = { failure: 0, success: 0, ban: 0, total: 0 };
         refreshCounts();
     });
+
+    // --- Panneau IP Stats ---
+    const ipPanel      = document.getElementById('ip-panel');
+    const ipList       = document.getElementById('ip-list');
+    const ipSummary    = document.getElementById('ip-summary');
+    const btnIps       = document.getElementById('btn-ips');
+    const btnIpRefresh = document.getElementById('btn-ip-refresh');
+    let   ipRefreshInterval = null;
+
+    const THREAT_LABEL = { brute_force: 'BRUTE', scan: 'SCAN', probe: 'PROBE' };
+
+    // Formate un timestamp ISO en temps relatif (ex: "5m", "2h", "3j")
+    function relativeTime(iso) {
+        const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+        if (diff < 60)    return diff + 's';
+        if (diff < 3600)  return Math.floor(diff / 60) + 'm';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+        return Math.floor(diff / 86400) + 'j';
+    }
+
+    // Construit et injecte le contenu du panneau depuis les donnees de l'API
+    function renderIpStats(data) {
+        const total     = data.reduce((s, d) => s + d.count, 0);
+        const bruteCnt  = data.filter(d => d.threat === 'brute_force').length;
+        const scanCnt   = data.filter(d => d.threat === 'scan').length;
+        ipSummary.textContent = data.length + ' IP(s)  |  ' + total + ' evenements'
+            + (bruteCnt ? '  |  ' + bruteCnt + ' brute' : '')
+            + (scanCnt  ? '  |  ' + scanCnt  + ' scan'  : '');
+
+        if (!data.length) {
+            ipList.innerHTML = '<div class="ip-empty">AUCUNE ACTIVITE HOSTILE DETECTEE</div>';
+            return;
+        }
+
+        const maxCount = data[0].count;
+        ipList.innerHTML = '';
+        data.forEach(d => {
+            const svcStr = Object.entries(d.services)
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => k + ':' + v)
+                .join('  ');
+            const pct = Math.max(4, Math.round(d.count / maxCount * 100));
+
+            const row = document.createElement('div');
+            row.className = 'ip-row';
+            row.innerHTML =
+                '<div class="ip-row-top">'
+                +   '<span class="ip-badge ' + d.threat + '">' + THREAT_LABEL[d.threat] + '</span>'
+                +   '<span class="ip-addr">'  + d.ip    + '</span>'
+                +   '<span class="ip-count '  + d.threat + '">' + d.count + '</span>'
+                + '</div>'
+                + '<div class="ip-bar"><div class="ip-bar-fill ' + d.threat
+                +   '" style="width:' + pct + '%"></div></div>'
+                + '<div class="ip-meta">'
+                +   '<span class="svc">' + svcStr + '</span>'
+                +   '<span>debut ' + relativeTime(d.first_seen) + '</span>'
+                +   '<span>vu ' + relativeTime(d.last_seen) + '</span>'
+                + '</div>';
+            ipList.appendChild(row);
+        });
+    }
+
+    // Interroge l'API et met a jour l'affichage
+    async function fetchIpStats() {
+        try {
+            const r    = await fetch('/api/ip-stats');
+            const data = await r.json();
+            renderIpStats(data);
+        } catch (e) { /* erreur reseau : on silencieuse */ }
+    }
+
+    // Toggle ouverture / fermeture du panneau
+    btnIps.addEventListener('click', () => {
+        const open = ipPanel.classList.toggle('open');
+        btnIps.classList.toggle('alert-active', open);
+        if (open) {
+            fetchIpStats();
+            ipRefreshInterval = setInterval(fetchIpStats, 15000);
+        } else {
+            clearInterval(ipRefreshInterval);
+            ipRefreshInterval = null;
+        }
+    });
+
+    btnIpRefresh.addEventListener('click', fetchIpStats);
 
     // --- Modal email ---
     function showFeedback(msg, isErr = false) {

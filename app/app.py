@@ -12,6 +12,7 @@ import threading
 import subprocess
 import time
 import logging
+from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask import Flask, render_template, Response, jsonify, request, stream_with_context
@@ -241,6 +242,80 @@ def send_alert(entry: dict) -> None:
     threading.Thread(target=_send, daemon=True).start()
 
 
+# ---------------------------------------------------------------------------
+# Statistiques par IP : suivi des tentatives hostiles
+# ---------------------------------------------------------------------------
+
+# Verrou pour l'acces concurrent depuis les threads de surveillance
+_ip_lock = threading.Lock()
+
+# { "1.2.3.4": { count, first_seen, last_seen, services: {svc: n}, types: {type: n} } }
+_ip_stats: dict = {}
+
+# Types d'evenements consideres comme hostiles pour le suivi IP
+_HOSTILE_TYPES = frozenset({"failure", "wireguard_failure", "ban", "nftables"})
+
+# Patterns d'extraction de l'IP source selon le format de la ligne
+_RE_IP_FROM_PORT = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})\s+port\b', re.IGNORECASE)
+_RE_IP_FROM      = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?\b', re.IGNORECASE)
+_RE_IP_SRC       = re.compile(r'\bSRC=(\d{1,3}(?:\.\d{1,3}){3})\b')
+_RE_IP_BAN       = re.compile(r'\b(?:Ban|Unban)\s+(\d{1,3}(?:\.\d{1,3}){3})\b', re.IGNORECASE)
+
+
+def extract_ip(line: str) -> str | None:
+    """
+    Extrait l'adresse IP source d'une ligne de log.
+    Essaie plusieurs patterns dans l'ordre de specificite.
+    """
+    for pattern in (_RE_IP_FROM_PORT, _RE_IP_FROM, _RE_IP_SRC, _RE_IP_BAN):
+        m = pattern.search(line)
+        if m:
+            return m.group(1)
+    return None
+
+
+def classify_threat(data: dict) -> str:
+    """
+    Classe le niveau de menace d'une IP selon ses tentatives :
+    - brute_force : beaucoup de tentatives concentrees sur un service
+    - scan        : plusieurs services cibles (reconnaissance)
+    - probe       : tentatives isolees
+    """
+    count    = data["count"]
+    nb_svc   = sum(1 for v in data["services"].values() if v > 0)
+
+    if nb_svc >= 3:
+        return "scan"
+    if count >= 20 and nb_svc == 1:
+        return "brute_force"
+    if nb_svc >= 2:
+        return "scan"
+    if count >= 5:
+        return "probe"
+    return "probe"
+
+
+def record_ip_event(ip: str, service: str, log_type: str) -> None:
+    """Enregistre une tentative hostile associee a une IP."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with _ip_lock:
+        if ip not in _ip_stats:
+            _ip_stats[ip] = {
+                "count":      0,
+                "first_seen": now,
+                "last_seen":  now,
+                "services":   {},
+                "types":      {}
+            }
+        entry = _ip_stats[ip]
+        entry["count"] += 1
+        entry["last_seen"] = now
+        entry["services"][service] = entry["services"].get(service, 0) + 1
+        entry["types"][log_type]   = entry["types"].get(log_type, 0) + 1
+
+
+# ---------------------------------------------------------------------------
+
 def process_line(line: str, fallback_service: str = None) -> None:
     """
     Traite une ligne de log brute : classification, diffusion SSE et alerte mail.
@@ -253,6 +328,12 @@ def process_line(line: str, fallback_service: str = None) -> None:
     log_type, service = classify_line(line)
     if fallback_service and service == "system":
         service = fallback_service
+
+    # Suivi des tentatives hostiles par IP
+    if log_type in _HOSTILE_TYPES:
+        ip = extract_ip(line)
+        if ip:
+            record_ip_event(ip, service, log_type)
 
     entry = {
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -445,6 +526,29 @@ def set_config():
     email_config.update(data)
     save_config()
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/ip-stats")
+def api_ip_stats() -> Response:
+    """
+    Retourne les statistiques de tentatives hostiles par IP.
+    Triees par nombre de tentatives decroissant, limitees aux 200 premieres.
+    """
+    with _ip_lock:
+        result = [
+            {
+                "ip":         ip,
+                "count":      data["count"],
+                "first_seen": data["first_seen"],
+                "last_seen":  data["last_seen"],
+                "services":   dict(data["services"]),
+                "types":      dict(data["types"]),
+                "threat":     classify_threat(data)
+            }
+            for ip, data in _ip_stats.items()
+        ]
+    result.sort(key=lambda x: x["count"], reverse=True)
+    return jsonify(result[:200])
 
 
 @app.route("/api/test-email", methods=["POST"])
