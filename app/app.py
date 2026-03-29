@@ -78,7 +78,7 @@ LOG_PATTERNS = [
         "id": "wireguard_success",
         "regex": re.compile(
             r"(wireguard|wg\d+).*(Receiving handshake initiation from peer|"
-            r"Sending handshake initiation to peer)",
+            r"Sending handshake initiation to peer|Sending handshake response to peer)",
             re.IGNORECASE
         ),
         "type": "wireguard_success",
