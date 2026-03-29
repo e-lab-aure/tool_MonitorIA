@@ -140,7 +140,9 @@
         .log-line.normal    { color: #909090; }
         .log-line.failure   { color: #ff3333; border-color: #cc1111; }
         .log-line.success   { color: #33ff55; border-color: #22aa33; }
-        .log-line.wireguard { color: #55aaff; border-color: #2266cc; }
+        .log-line.wireguard         { color: #55aaff; border-color: #2266cc; }
+        .log-line.wireguard_success { color: #44ddff; border-color: #1199cc; }
+        .log-line.wireguard_failure { color: #ff6633; border-color: #cc3311; }
         .log-line.ban       { color: #ff9900; border-color: #bb6600; }
         .log-line.unban     { color: #ffee00; border-color: #ccaa00; }
         .log-line.nftables  { color: #dd66ff; border-color: #9922bb; }
@@ -434,8 +436,8 @@
     function appendLog(entry) {
         // Compteurs
         state.counts.total++;
-        if (entry.type === 'failure') state.counts.failure++;
-        else if (entry.type === 'success') state.counts.success++;
+        if (entry.type === 'failure' || entry.type === 'wireguard_failure') state.counts.failure++;
+        else if (entry.type === 'success' || entry.type === 'wireguard_success') state.counts.success++;
         else if (entry.type === 'ban' || entry.type === 'unban') state.counts.ban++;
         refreshCounts();
 

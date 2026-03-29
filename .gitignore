@@ -18,3 +18,6 @@ venv/
 # Fichiers locaux
 CLAUDE.md
 .env
+
+# Dossier de travail local (fichiers sensibles, configs serveur, notes de dev)
+work/

@@ -21,6 +21,9 @@ app = Flask(__name__)
 
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "/app/config/config.json")
 
+# Port UDP WireGuard (51820 par defaut, surchargeable via variable d'environnement)
+WG_PORT = re.escape(os.environ.get("WG_PORT", "51820"))
+
 DEFAULT_CONFIG = {
     "enabled": False,
     "smtp_host": "",
@@ -63,9 +66,51 @@ LOG_PATTERNS = [
         "service": "SSH"
     },
     {
+        # Handshake avec un pair connu : connexion WireGuard aboutie.
+        # "Receiving handshake initiation from peer N" = pair authentifie (cle connue).
+        # "Sending handshake initiation to peer N"    = keepalive ou reconnexion sortante.
+        "id": "wireguard_success",
+        "regex": re.compile(
+            r"(wireguard|wg\d+).*(Receiving handshake initiation from peer|"
+            r"Sending handshake initiation to peer)",
+            re.IGNORECASE
+        ),
+        "type": "wireguard_success",
+        "service": "WireGuard"
+    },
+    {
+        # Tentative invalide ou paquet rejete.
+        # "Invalid handshake initiation from"          = source inconnue (aucun pair correspondant).
+        # "Invalid MAC of handshake, dropping packet"  = MAC incorrecte (paquet corrompu ou usurpe).
+        # "unallowed src IP"                           = paquet depuis une IP non declaree pour ce pair.
+        # "replay attack"                              = paquet rejoue detecte.
+        "id": "wireguard_failure",
+        "regex": re.compile(
+            r"(wireguard|wg\d+).*(Invalid handshake initiation|Invalid MAC of handshake|"
+            r"unallowed src IP|replay attack|too many sessions)",
+            re.IGNORECASE
+        ),
+        "type": "wireguard_failure",
+        "service": "WireGuard"
+    },
+    {
+        # Paquets UDP vers le port WireGuard loggues par nftables
+        # Correspond au prefixe recommande [wireguard-*] ou a DPT=<port> PROTO=UDP
+        "id": "wireguard_nftables",
+        "regex": re.compile(
+            rf"\[wireguard[^\]]*\]|(?:PROTO=UDP.*\bDPT={WG_PORT}\b|\bDPT={WG_PORT}\b.*PROTO=UDP)",
+            re.IGNORECASE
+        ),
+        "type": "wireguard",
+        "service": "WireGuard"
+    },
+    {
+        # Autres evenements generiques du module WireGuard ou du service wg-quick.
+        # Couvre : cookie response, no route, keypair, peer, session, interface, etc.
         "id": "wireguard",
         "regex": re.compile(
-            r"(wireguard|wg-quick|wg0).*(handshake|peer|session|allowed ip|interface)",
+            r"(wireguard|wg-quick|wg\d+).*(handshake|peer|session|allowed ip|interface|"
+            r"keypair|endpoint|roaming|destroying|cookie|no route)",
             re.IGNORECASE
         ),
         "type": "wireguard",
@@ -235,6 +280,42 @@ def tail_journald() -> None:
         time.sleep(5)
 
 
+# Filtre rapide pour les messages noyau : ne traiter que les lignes WireGuard
+# afin d'eviter de diffuser tous les messages kernel non pertinents.
+_KERNEL_WG_FILTER = re.compile(r"wireguard", re.IGNORECASE)
+
+
+def tail_journald_kernel() -> None:
+    """
+    Surveille le journal noyau (journalctl -k) pour capturer les logs du module
+    WireGuard et les paquets nftables loggues avec un prefixe [wireguard-*].
+    Seules les lignes contenant "wireguard" sont transmises au pipeline de traitement.
+    """
+    cmd = ["journalctl", "-f", "-k", "-n", "50", "--no-pager", "--output=short-iso"]
+
+    app.logger.info("[INFO] Demarrage surveillance journalctl kernel (WireGuard)")
+
+    while True:
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True
+            )
+            for line in proc.stdout:
+                if _KERNEL_WG_FILTER.search(line):
+                    process_line(line)
+            proc.wait()
+            app.logger.warning("[WARNING] journalctl -k s'est arrete, redemarrage dans 5s")
+        except FileNotFoundError:
+            app.logger.warning("[WARNING] journalctl non disponible pour les logs kernel")
+            break
+        except Exception as exc:
+            app.logger.error(f"[ERROR] journalctl kernel : {exc}")
+        time.sleep(5)
+
+
 def tail_file(filepath: str, service: str) -> None:
     """
     Surveille un fichier de log en continu (lecture de fin de fichier).
@@ -269,6 +350,9 @@ def start_log_watchers() -> None:
     Tente journalctl en priorite, puis les fichiers de logs en parallele.
     """
     threading.Thread(target=tail_journald, daemon=True).start()
+
+    # Surveillance du journal noyau pour les logs WireGuard (module kernel + nftables)
+    threading.Thread(target=tail_journald_kernel, daemon=True).start()
 
     # Fichiers surveilles en complement (couvrent fail2ban, nftables, acces SSH)
     log_files = [

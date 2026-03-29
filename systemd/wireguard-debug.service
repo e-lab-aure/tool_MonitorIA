@@ -1,0 +1,28 @@
+# /etc/systemd/system/wireguard-debug.service
+#
+# Active les logs debug du module noyau WireGuard au demarrage.
+# Sans ce service, seuls les messages "Invalid handshake" apparaissent.
+# Avec ce service, les handshakes reussis ("Receiving handshake initiation from peer")
+# sont egalement loggues et captures par MonitorIA.
+#
+# Installation :
+#   sudo cp systemd/wireguard-debug.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wireguard-debug.service
+#
+# Verification :
+#   sudo systemctl status wireguard-debug.service
+#   sudo grep wireguard /sys/kernel/debug/dynamic_debug/control | grep '=p'
+
+[Unit]
+Description=Activation des logs debug du module WireGuard
+After=sys-kernel-debug.mount
+ConditionPathExists=/sys/kernel/debug/dynamic_debug/control
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "echo 'module wireguard +p' > /sys/kernel/debug/dynamic_debug/control"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
