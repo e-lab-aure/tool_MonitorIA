@@ -39,10 +39,14 @@ app.logger.setLevel(logging.INFO)
 CONFIG_PATH    = os.environ.get("CONFIG_PATH",    "/app/config/config.json")
 IP_STATS_PATH  = os.environ.get("IP_STATS_PATH",  "/app/config/ip_stats.json")
 BLOCKLIST_PATH = os.environ.get("BLOCKLIST_PATH", "/app/config/blocklist.json")
+IP_LOGS_DIR    = os.environ.get("IP_LOGS_DIR",    "/app/config/ip_logs")
 
 # Table nftables geree par MonitorIA (creee automatiquement si absente)
 NFT_TABLE = "monitoria"
 NFT_SET   = "blocklist"
+
+# Taille maximale du dossier de logs IP (1 Go)
+IP_LOGS_MAX_BYTES = 1 * 1024 * 1024 * 1024
 
 # Duree de retention des stats IP : buckets plus vieux purges a la sauvegarde
 RETENTION_DAYS = 7
@@ -455,6 +459,25 @@ _RE_IP_FROM      = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?\b', 
 _RE_IP_SRC       = re.compile(r'\bSRC=(\d{1,3}(?:\.\d{1,3}){3})\b')
 _RE_IP_BAN       = re.compile(r'\b(?:Ban|Unban)\s+(\d{1,3}(?:\.\d{1,3}){3})\b', re.IGNORECASE)
 
+# Patterns d'extraction du port de destination
+_RE_PORT_DPT  = re.compile(r'\bDPT=(\d+)\b')
+_RE_PORT_PORT = re.compile(r'\bport\s+(\d+)\b', re.IGNORECASE)
+_RE_PORT_ON   = re.compile(r'\bon\s+port\s+(\d+)\b', re.IGNORECASE)
+
+# Port par defaut par service (quand aucun port explicite dans la ligne)
+_SERVICE_DEFAULT_PORTS: dict[str, int | None] = {
+    "SSH":       22,
+    "WireGuard": 51820,
+    "fail2ban":  None,
+    "nftables":  None,
+}
+
+# Constantes de validation nftables (protection injection commande)
+_VALID_NFT_FAMILIES = frozenset({"ip", "ip6", "inet", "arp", "bridge", "netdev"})
+_VALID_NFT_ACTIONS  = frozenset({"drop", "accept", "reject"})
+_VALID_NFT_PROTOS   = frozenset({"tcp", "udp", "any"})
+_RE_NFT_NAME        = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
 
 def extract_ip(line: str) -> str | None:
     """
@@ -465,6 +488,22 @@ def extract_ip(line: str) -> str | None:
         m = pattern.search(line)
         if m:
             return m.group(1)
+    return None
+
+
+def extract_port(line: str, service: str | None = None) -> int | None:
+    """
+    Extrait le port de destination d'une ligne de log.
+    Priorite : DPT= (nftables) > 'on port N' > 'port N' > port par defaut du service.
+    """
+    for pattern in (_RE_PORT_DPT, _RE_PORT_ON, _RE_PORT_PORT):
+        m = pattern.search(line)
+        if m:
+            p = int(m.group(1))
+            if 1 <= p <= 65535:
+                return p
+    if service:
+        return _SERVICE_DEFAULT_PORTS.get(service)
     return None
 
 
@@ -645,6 +684,97 @@ def ip_stats_saver() -> None:
     while True:
         time.sleep(300)
         save_ip_stats()
+
+
+# ---------------------------------------------------------------------------
+# Archive de logs par IP (rotation automatique a 1 Go)
+# ---------------------------------------------------------------------------
+
+_ip_logs_lock = threading.Lock()
+
+
+def _ip_log_path(ip: str) -> str:
+    """Retourne le chemin du fichier de log pour une IP donnee."""
+    # Sanitize IP pour nom de fichier (remplace les points par des underscores)
+    safe = ip.replace(".", "_").replace(":", "_")
+    return os.path.join(IP_LOGS_DIR, f"{safe}.jsonl")
+
+
+def _ip_logs_total_size() -> int:
+    """Calcule la taille totale du repertoire de logs IP en octets."""
+    total = 0
+    try:
+        for fname in os.listdir(IP_LOGS_DIR):
+            if fname.endswith(".jsonl"):
+                try:
+                    total += os.path.getsize(os.path.join(IP_LOGS_DIR, fname))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+def _rotate_ip_logs() -> None:
+    """
+    Supprime les fichiers de logs IP les plus anciens jusqu'a repasser sous IP_LOGS_MAX_BYTES.
+    Strategie : supprimer d'abord les fichiers dont le dernier evenement est le plus ancien.
+    """
+    try:
+        files = []
+        for fname in os.listdir(IP_LOGS_DIR):
+            if not fname.endswith(".jsonl"):
+                continue
+            fpath = os.path.join(IP_LOGS_DIR, fname)
+            try:
+                mtime = os.path.getmtime(fpath)
+                size  = os.path.getsize(fpath)
+                files.append((mtime, size, fpath))
+            except OSError:
+                pass
+        # Trier par date de modification croissante (plus anciens en premier)
+        files.sort(key=lambda x: x[0])
+        total = sum(f[1] for f in files)
+        for mtime, size, fpath in files:
+            if total <= IP_LOGS_MAX_BYTES * 0.9:  # marge 10%
+                break
+            try:
+                os.unlink(fpath)
+                total -= size
+                app.logger.info(f"[INFO] Rotation logs IP : suppression {fpath} ({size} octets)")
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def archive_ip_log(ip: str, entry: dict) -> None:
+    """
+    Archive une ligne de log associee a une IP dans son fichier JSONL dedie.
+    Verifie le quota 1 Go et declenche une rotation si necessaire.
+    Ne leve jamais d'exception (non bloquant pour le flux principal).
+    """
+    try:
+        os.makedirs(IP_LOGS_DIR, exist_ok=True)
+        line = json.dumps({
+            "ts":      entry.get("timestamp", ""),
+            "type":    entry.get("type", ""),
+            "service": entry.get("service", ""),
+            "line":    entry.get("line", "")
+        }, ensure_ascii=False)
+        fpath = _ip_log_path(ip)
+        with _ip_logs_lock:
+            with open(fpath, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            # Verifier le quota toutes les 100 appels environ (evite stat() a chaque event)
+            if not hasattr(archive_ip_log, "_call_counter"):
+                archive_ip_log._call_counter = 0
+            archive_ip_log._call_counter += 1
+            if archive_ip_log._call_counter % 100 == 0:
+                if _ip_logs_total_size() > IP_LOGS_MAX_BYTES:
+                    _rotate_ip_logs()
+    except Exception as exc:
+        app.logger.warning(f"[WARNING] archive_ip_log({ip}) : {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -841,17 +971,21 @@ def process_line(line: str, fallback_service: str = None) -> None:
     # Suivi des tentatives hostiles par IP
     # Les IPs en liste blanche et les evenements correspondant a une regle d'exception
     # (ex: connexions root locales declenchees par des crons) sont exclus du suivi.
-    if log_type in _HOSTILE_TYPES:
-        ip = extract_ip(line)
-        if ip and not is_whitelisted(ip) and not matches_exception_rule(log_type, ip, line):
-            record_ip_event(ip, service, log_type, line)
-
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     entry = {
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": now_str,
         "line":      line,
         "type":      log_type,
         "service":   service
     }
+
+    if log_type in _HOSTILE_TYPES:
+        ip = extract_ip(line)
+        if ip and not is_whitelisted(ip) and not matches_exception_rule(log_type, ip, line):
+            record_ip_event(ip, service, log_type, line)
+            # Archivage du log dans le fichier dedie a cette IP
+            threading.Thread(target=archive_ip_log, args=(ip, entry), daemon=True).start()
+
     broadcast(entry)
     send_alert(entry)
 
@@ -1265,6 +1399,193 @@ def api_nft_action() -> Response:
     return jsonify({"error": msg}), 500
 
 
+@app.route("/api/nftables/rules")
+def api_nft_rules() -> Response:
+    """
+    Retourne les tables, chaines et regles nftables sous forme structuree (JSON nft).
+    Fallback vers le texte brut si la version de nft ne supporte pas -j.
+    """
+    return jsonify(get_nft_rules_json())
+
+
+@app.route("/api/nftables/rule", methods=["DELETE"])
+def api_nft_delete_rule() -> Response:
+    """
+    Supprime une regle nftables par son handle.
+    Corps JSON : { "family": "inet", "table": "filter", "chain": "input", "handle": 4 }
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Corps JSON invalide"}), 400
+
+    family  = data.get("family", "inet")
+    table   = data.get("table", "")
+    chain   = data.get("chain", "")
+    handle  = data.get("handle")
+
+    if family not in _VALID_NFT_FAMILIES:
+        return jsonify({"error": f"Family invalide : {family}"}), 400
+    if not _RE_NFT_NAME.match(table):
+        return jsonify({"error": f"Nom de table invalide : {table}"}), 400
+    if not _RE_NFT_NAME.match(chain):
+        return jsonify({"error": f"Nom de chaine invalide : {chain}"}), 400
+    try:
+        handle = int(handle)
+        if handle <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "Handle doit etre un entier positif"}), 400
+
+    r = subprocess.run(
+        ["nft", "delete", "rule", family, table, chain, "handle", str(handle)],
+        capture_output=True, text=True, timeout=5
+    )
+    if r.returncode == 0:
+        app.logger.info(f"[INFO] Regle supprimee : {family} {table} {chain} handle {handle}")
+        return jsonify({"status": "ok"})
+    return jsonify({"error": r.stderr.strip()}), 500
+
+
+@app.route("/api/nftables/add-rule", methods=["POST"])
+def api_nft_add_rule() -> Response:
+    """
+    Ajoute une regle nftables simple via un formulaire guide.
+    Corps JSON : { "family", "table", "chain", "ip", "port", "proto", "action" }
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Corps JSON invalide"}), 400
+
+    family = data.get("family", "inet")
+    table  = data.get("table", "")
+    chain  = data.get("chain", "input")
+    ip     = data.get("ip", "").strip()
+    port   = data.get("port", 0)
+    proto  = data.get("proto", "any")
+    action = data.get("action", "drop")
+
+    if family not in _VALID_NFT_FAMILIES:
+        return jsonify({"error": f"Family invalide : {family}"}), 400
+    if not _RE_NFT_NAME.match(table):
+        return jsonify({"error": f"Nom de table invalide : {table}"}), 400
+    if not _RE_NFT_NAME.match(chain):
+        return jsonify({"error": f"Nom de chaine invalide : {chain}"}), 400
+    if action not in _VALID_NFT_ACTIONS:
+        return jsonify({"error": f"Action invalide : {action}"}), 400
+    if proto not in _VALID_NFT_PROTOS:
+        return jsonify({"error": f"Protocol invalide : {proto}"}), 400
+
+    # Validation IP/CIDR (protection injection)
+    net_str = None
+    if ip:
+        try:
+            net_str = str(ipaddress.ip_network(ip, strict=False))
+        except ValueError:
+            return jsonify({"error": f"IP/CIDR invalide : {ip}"}), 400
+
+    try:
+        port = int(port)
+        if not (0 <= port <= 65535):
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"error": "Port invalide (0-65535)"}), 400
+
+    # Construction de la commande (liste, jamais de shell=True)
+    cmd = ["nft", "add", "rule", family, table, chain]
+    if net_str:
+        cmd += ["ip", "saddr", net_str]
+    if proto != "any":
+        cmd += [proto]
+    if port > 0:
+        cmd += ["dport", str(port)]
+    cmd += ["counter", action]
+
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+    if r.returncode == 0:
+        app.logger.info(f"[INFO] Regle ajoutee : {' '.join(cmd)}")
+        return jsonify({"status": "ok", "message": "Regle ajoutee avec succes"})
+    return jsonify({"error": r.stderr.strip()}), 500
+
+
+@app.route("/api/flux")
+def api_flux() -> Response:
+    """Retourne les flux de trafic hostile des 60 dernieres minutes."""
+    return jsonify(compute_flux())
+
+
+@app.route("/api/ip-logs/<path:ip>")
+def api_ip_logs(ip: str) -> Response:
+    """
+    Retourne les logs archives pour une IP donnee.
+    Parametres optionnels : ?limit=200&offset=0
+    """
+    if not _validate_ipv4(ip):
+        return jsonify({"error": "IP invalide"}), 400
+
+    limit  = min(int(request.args.get("limit", 200)), 1000)
+    offset = int(request.args.get("offset", 0))
+
+    fpath = _ip_log_path(ip)
+    logs  = []
+    try:
+        with open(fpath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        logs.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+    except FileNotFoundError:
+        pass
+    except IOError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    # Plus recents en premier
+    logs.reverse()
+    total = len(logs)
+    page  = logs[offset:offset + limit]
+
+    return jsonify({
+        "ip":     ip,
+        "total":  total,
+        "offset": offset,
+        "limit":  limit,
+        "logs":   page
+    })
+
+
+@app.route("/api/ip-logs-stats")
+def api_ip_logs_stats() -> Response:
+    """Retourne la taille totale du dossier de logs IP et la liste des IPs archivees."""
+    total_bytes = _ip_logs_total_size()
+    files = []
+    try:
+        for fname in sorted(os.listdir(IP_LOGS_DIR)):
+            if not fname.endswith(".jsonl"):
+                continue
+            fpath = os.path.join(IP_LOGS_DIR, fname)
+            try:
+                sz    = os.path.getsize(fpath)
+                mtime = os.path.getmtime(fpath)
+                ip    = fname[:-6].replace("_", ".")  # reverse sanitize
+                files.append({"ip": ip, "size_bytes": sz,
+                               "last_seen": datetime.fromtimestamp(mtime, tz=timezone.utc)
+                                             .strftime("%Y-%m-%d %H:%M:%S")})
+            except OSError:
+                pass
+    except OSError:
+        pass
+    files.sort(key=lambda x: x["size_bytes"], reverse=True)
+    return jsonify({
+        "total_bytes":    total_bytes,
+        "total_mb":       round(total_bytes / 1024 / 1024, 1),
+        "max_bytes":      IP_LOGS_MAX_BYTES,
+        "usage_pct":      round(total_bytes / IP_LOGS_MAX_BYTES * 100, 1),
+        "files":          files
+    })
+
+
 @app.route("/api/threat-status")
 def api_threat_status() -> Response:
     """
@@ -1306,6 +1627,281 @@ def api_threat_status() -> Response:
         "active_ips":    len(active_ips),
         "types":         types
     })
+
+
+# ---------------------------------------------------------------------------
+# nftables JSON : parsing des regles avec handles
+# ---------------------------------------------------------------------------
+
+def _parse_nft_expr(expr_list: list) -> dict:
+    """
+    Parse la liste 'expr' d'une regle nft JSON pour extraire les champs utiles.
+    Retourne un dict : saddr, dport, proto, action, packets, bytes.
+    """
+    saddr   = None
+    dport   = None
+    proto   = None
+    action  = None
+    packets = None
+    nbytes  = None
+
+    for expr in expr_list:
+        if not isinstance(expr, dict):
+            continue
+        # Compteur de paquets
+        if "counter" in expr:
+            c = expr["counter"]
+            if isinstance(c, dict):
+                packets = c.get("packets")
+                nbytes  = c.get("bytes")
+        # Action terminale
+        for act in ("drop", "accept", "reject", "masquerade", "return"):
+            if act in expr:
+                action = act
+                break
+        # Match : adresse source, port destination, proto
+        if "match" in expr:
+            m = expr["match"]
+            left  = m.get("left", {})
+            right = m.get("right")
+            payload = left.get("payload", {})
+            field   = payload.get("field", "")
+            prot    = payload.get("protocol", "")
+            if field == "saddr":
+                saddr = str(right) if right is not None else None
+            elif field == "dport":
+                if isinstance(right, int):
+                    dport = right
+                elif isinstance(right, dict) and "range" in right:
+                    dport = right["range"][0]
+            if prot in ("tcp", "udp", "icmp"):
+                proto = prot
+
+    return {
+        "saddr":   saddr,
+        "dport":   dport,
+        "proto":   proto,
+        "action":  action or "unknown",
+        "packets": packets,
+        "bytes":   nbytes
+    }
+
+
+def get_nft_rules_json() -> dict:
+    """
+    Retourne les tables, chaines et regles nftables via 'nft -j list ruleset'.
+    Fallback vers le texte brut si le flag -j n'est pas supporte.
+    """
+    r = subprocess.run(
+        ["nft", "-j", "list", "ruleset"],
+        capture_output=True, text=True, timeout=5
+    )
+    if r.returncode != 0:
+        # Fallback texte
+        ok, raw = get_nft_ruleset()
+        return {"json_available": False, "raw": raw if ok else r.stderr.strip()}
+
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        ok, raw = get_nft_ruleset()
+        return {"json_available": False, "raw": raw}
+
+    tables = []
+    chains = []
+    rules  = []
+
+    for item in data.get("nftables", []):
+        if "table" in item:
+            t = item["table"]
+            tables.append({"family": t.get("family", ""), "name": t.get("name", ""),
+                            "handle": t.get("handle")})
+        elif "chain" in item:
+            c = item["chain"]
+            chains.append({
+                "family": c.get("family", ""), "table": c.get("table", ""),
+                "name":   c.get("name", ""),   "handle": c.get("handle"),
+                "hook":   c.get("hook"),        "prio":   c.get("prio"),
+                "policy": c.get("policy"),      "type":   c.get("type")
+            })
+        elif "rule" in item:
+            ru = item["rule"]
+            parsed = _parse_nft_expr(ru.get("expr", []))
+            rules.append({
+                "family":  ru.get("family", ""),
+                "table":   ru.get("table", ""),
+                "chain":   ru.get("chain", ""),
+                "handle":  ru.get("handle"),
+                "comment": ru.get("comment", ""),
+                **parsed
+            })
+
+    return {
+        "json_available": True,
+        "tables": tables,
+        "chains": chains,
+        "rules":  rules
+    }
+
+
+# ---------------------------------------------------------------------------
+# Flux trafic hostile : analyse temps reel depuis _event_buffer
+# ---------------------------------------------------------------------------
+
+def compute_flux() -> dict:
+    """
+    Calcule les flux de trafic hostile des 60 dernieres minutes
+    depuis _event_buffer. Retourne flows, timeline, port_heatmap, active_scans.
+    """
+    now    = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=60)
+
+    with _buffer_lock:
+        snapshot = list(_event_buffer)
+
+    # Buckets par minute pour la timeline (60 slots)
+    timeline_buckets: dict[str, int] = {}
+    flows: dict[tuple, dict]         = {}
+    ports_per_ip: dict[str, set]     = {}
+
+    for evt in snapshot:
+        ts_str = evt.get("timestamp", "")
+        etype  = evt.get("type", "")
+        if etype not in _HOSTILE_TYPES:
+            continue
+        try:
+            ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if ts < cutoff:
+            continue
+
+        line    = evt.get("line", "")
+        service = evt.get("service", "")
+        ip      = extract_ip(line)
+        port    = extract_port(line, service)
+        if not ip:
+            continue
+
+        # Timeline : cle = "HH:MM"
+        bucket_key = ts.strftime("%H:%M")
+        timeline_buckets[bucket_key] = timeline_buckets.get(bucket_key, 0) + 1
+
+        # Flux par (ip, port)
+        key = (ip, port)
+        if key not in flows:
+            flows[key] = {
+                "source_ip":      ip,
+                "target_port":    port,
+                "target_service": service,
+                "count":          0,
+                "first_seen":     ts_str,
+                "last_seen":      ts_str,
+                "types":          {}
+            }
+        f = flows[key]
+        f["count"]        += 1
+        f["last_seen"]     = ts_str
+        f["types"][etype]  = f["types"].get(etype, 0) + 1
+
+        # Ports uniques par IP pour detection de scan
+        if ip not in ports_per_ip:
+            ports_per_ip[ip] = set()
+        if port:
+            ports_per_ip[ip].add(port)
+
+    # Taux par flux et classification
+    flow_list = []
+    for f in flows.values():
+        try:
+            span_s = max(1, (
+                datetime.strptime(f["last_seen"], "%Y-%m-%d %H:%M:%S") -
+                datetime.strptime(f["first_seen"], "%Y-%m-%d %H:%M:%S")
+            ).total_seconds())
+        except ValueError:
+            span_s = 1
+        rate = round(f["count"] / span_s * 60, 1)
+        score = sum(f["types"].get(t, 0) * w for t, w in THREAT_WEIGHTS.items())
+        nb_svc = len(ports_per_ip.get(f["source_ip"], set()))
+        if nb_svc >= SCAN_MIN_SERVICES:
+            threat = "scan"
+        elif score >= BRUTE_FORCE_MIN_COUNT:
+            threat = "brute_force"
+        else:
+            threat = "probe"
+        flow_list.append({**f, "rate": rate, "threat_level": threat})
+
+    flow_list.sort(key=lambda x: x["count"], reverse=True)
+
+    # Heatmap des ports : 30 dernières minutes vs 30 précédentes pour la tendance
+    mid_cutoff = now - timedelta(minutes=30)
+    mid_str    = mid_cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    port_recent: dict[int, int] = {}
+    port_older:  dict[int, int] = {}
+    port_svcs:   dict[int, str] = {}
+
+    with _buffer_lock:
+        for evt in _event_buffer:
+            if evt.get("type") not in _HOSTILE_TYPES:
+                continue
+            port = extract_port(evt.get("line", ""), evt.get("service"))
+            if port is None:
+                continue
+            port_svcs.setdefault(port, evt.get("service", ""))
+            if evt.get("timestamp", "") >= mid_str:
+                port_recent[port] = port_recent.get(port, 0) + 1
+            else:
+                port_older[port] = port_older.get(port, 0) + 1
+
+    all_ports = set(port_recent) | set(port_older)
+    heatmap   = []
+    for p in all_ports:
+        recent_cnt = port_recent.get(p, 0)
+        older_cnt  = port_older.get(p, 0)
+        total_cnt  = recent_cnt + older_cnt
+        if older_cnt > 0:
+            delta = (recent_cnt - older_cnt) / older_cnt
+        else:
+            delta = 1.0 if recent_cnt > 0 else 0.0
+        trend = "up" if delta > 0.2 else ("down" if delta < -0.2 else "stable")
+        heatmap.append({"port": p, "service": port_svcs.get(p, ""), "count": total_cnt,
+                        "recent": recent_cnt, "trend": trend})
+    heatmap.sort(key=lambda x: x["count"], reverse=True)
+
+    # Scans actifs : IP ciblant >= 2 ports distincts
+    active_scans = []
+    for ip, ports in ports_per_ip.items():
+        if len(ports) >= SCAN_MIN_SERVICES:
+            # first_seen du scan = oldest event pour cette IP dans les 60 min
+            ip_first = now.strftime("%Y-%m-%d %H:%M:%S")
+            with _buffer_lock:
+                for evt in _event_buffer:
+                    if evt.get("type") not in _HOSTILE_TYPES:
+                        continue
+                    if extract_ip(evt.get("line", "")) == ip:
+                        if evt.get("timestamp", "") < ip_first:
+                            ip_first = evt["timestamp"]
+            active_scans.append({
+                "ip":         ip,
+                "ports":      sorted(ports),
+                "port_count": len(ports),
+                "started":    ip_first
+            })
+    active_scans.sort(key=lambda x: x["port_count"], reverse=True)
+
+    # Timeline : generer les 60 derniers slots (une entree par minute)
+    timeline = []
+    for i in range(59, -1, -1):
+        t = now - timedelta(minutes=i)
+        key = t.strftime("%H:%M")
+        timeline.append({"minute": key, "count": timeline_buckets.get(key, 0)})
+
+    return {
+        "flows":        flow_list[:100],
+        "timeline":     timeline,
+        "port_heatmap": heatmap[:15],
+        "active_scans": active_scans
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -467,6 +467,115 @@
         .section-toggle .arrow { transition: transform 0.2s; }
         .section-toggle.open .arrow { transform: rotate(90deg); }
 
+        /* ===== EDITEUR NFTABLES ===== */
+        .nft-sel-row {
+            display: flex; gap: 5px; padding: 6px 12px;
+            border-bottom: 1px solid #0e0e0e; flex-shrink: 0;
+        }
+        .nft-sel-row select {
+            flex: 1; background: #080808; border: 1px solid #1c1c1c;
+            color: #888; padding: 3px 6px; font-family: inherit; font-size: 10px; outline: none;
+        }
+        .nft-sel-row select option { background: #111; }
+        .nft-rule-card { padding: 6px 12px; border-bottom: 1px solid #0d0d0d; }
+        .nft-rule-card:hover { background: #0d0d0d; }
+        .nft-rule-card-top { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; flex-wrap: wrap; }
+        .nft-handle { color: #2a2a2a; font-size: 9px; flex-shrink: 0; }
+        .nft-action-badge { padding: 1px 5px; font-size: 8px; border-radius: 2px; letter-spacing: 1px; flex-shrink: 0; }
+        .nft-action-badge.drop    { background:#2a0808; color:#ff4444; border:1px solid #441111; }
+        .nft-action-badge.accept  { background:#001a00; color:#44ff44; border:1px solid #115511; }
+        .nft-action-badge.reject  { background:#1a1000; color:#ff8833; border:1px solid #442200; }
+        .nft-action-badge.unknown { background:#111;    color:#444;    border:1px solid #222; }
+        .nft-pill {
+            background: #0d0d0d; border: 1px solid #1a1a1a; color: #555;
+            font-size: 9px; padding: 1px 6px; border-radius: 2px; flex-shrink: 0;
+        }
+        .nft-pill.ip   { color: #4488aa; border-color: #1a3344; }
+        .nft-pill.port { color: #44aa66; border-color: #1a3322; }
+        .nft-pill.set  { color: #aa8844; border-color: #332200; }
+        .nft-counter { color: #2a2a2a; font-size: 9px; margin-left: auto; }
+        .nft-del-btn {
+            background: transparent; border: 1px solid #2a1111; color: #551111;
+            padding: 1px 5px; font-size: 8px; cursor: pointer; border-radius: 2px;
+            font-family: inherit; margin-left: auto; flex-shrink: 0; letter-spacing: 1px;
+        }
+        .nft-del-btn:hover { border-color: #882222; color: #ff3333; }
+        .nft-add-form {
+            border-top: 1px solid #111; padding: 8px 12px; flex-shrink: 0; background: #080808;
+        }
+        .nft-add-title { font-size: 9px; color: #2a2a2a; letter-spacing: 2px; margin-bottom: 7px; }
+        .nft-add-row { display: flex; gap: 5px; margin-bottom: 5px; }
+        .nft-add-row input, .nft-add-row select {
+            flex: 1; background: #0a0a0a; border: 1px solid #1c1c1c; color: #888;
+            padding: 3px 6px; font-family: inherit; font-size: 10px; outline: none; min-width: 0;
+        }
+        .nft-add-row input::placeholder { color: #222; }
+        .nft-add-row input:focus, .nft-add-row select:focus { border-color: #333; }
+        .nft-add-row select option { background: #111; }
+
+        /* ===== FLUX TRAFIC ===== */
+        .flux-section-title {
+            padding: 5px 12px; font-size: 9px; color: #2a2a2a;
+            letter-spacing: 2px; border-bottom: 1px solid #0a0a0a; flex-shrink: 0;
+        }
+        .scan-alert { padding: 6px 12px; border-bottom: 1px solid #1a0800; background: #0d0800; }
+        .scan-alert-top { display: flex; align-items: center; gap: 6px; }
+        .scan-badge {
+            background: #2a1000; color: #ff8833; border: 1px solid #552200;
+            font-size: 8px; padding: 2px 6px; border-radius: 2px; letter-spacing: 1px;
+        }
+        .scan-ip    { font-size: 10px; color: #cc5500; flex: 1; }
+        .scan-ports { font-size: 9px; color: #553300; margin-top: 3px; word-break: break-all; }
+        .heatmap-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 12px; border-bottom: 1px solid #0a0a0a;
+        }
+        .heatmap-row:hover { background: #0d0d0d; }
+        .heatmap-port { width: 42px; font-size: 11px; color: #777; flex-shrink: 0; font-weight: bold; }
+        .heatmap-svc  { width: 65px; font-size: 9px; color: #3a3a3a; flex-shrink: 0; }
+        .heatmap-bar  { flex: 1; height: 3px; background: #111; border-radius: 1px; overflow: hidden; }
+        .heatmap-fill { height: 100%; border-radius: 1px; background: #cc2222; transition: width 0.4s; }
+        .heatmap-cnt  { width: 32px; text-align: right; font-size: 10px; color: #555; flex-shrink: 0; }
+        .heatmap-trend { width: 10px; font-size: 10px; flex-shrink: 0; }
+        .heatmap-trend.up    { color: #ff4444; }
+        .heatmap-trend.down  { color: #33aa33; }
+        .heatmap-trend.stable { color: #2a2a2a; }
+        .timeline-section { padding: 6px 12px 8px; border-bottom: 1px solid #0e0e0e; flex-shrink: 0; }
+        .timeline-title { font-size: 9px; color: #2a2a2a; letter-spacing: 1px; margin-bottom: 5px; }
+        .timeline-bars { display: flex; align-items: flex-end; gap: 1px; height: 44px; }
+        .timeline-bar {
+            flex: 1; background: #141414; cursor: pointer; border-radius: 1px 1px 0 0;
+            transition: background 0.15s; min-height: 2px;
+        }
+        .timeline-bar:hover    { background: #882222; }
+        .timeline-bar.active   { background: #cc3333; }
+        .timeline-bar.selected { background: #ff4444; outline: 1px solid #ff6666; }
+        .timeline-bar.empty    { background: #0d0d0d; cursor: default; }
+        .timeline-labels {
+            display: flex; justify-content: space-between;
+            font-size: 8px; color: #2a2a2a; margin-top: 3px;
+        }
+        .flux-ip-group { border-bottom: 1px solid #0e0e0e; }
+        .flux-ip-header {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 12px; cursor: pointer; background: #0a0a0a;
+        }
+        .flux-ip-header:hover { background: #0d0d0d; }
+        .flux-ip-addr  { flex: 1; font-size: 11px; color: #c8c8c8; }
+        .flux-ip-total { font-size: 12px; font-weight: bold; flex-shrink: 0; }
+        .flux-ip-total.brute_force { color: #ff4444; }
+        .flux-ip-total.scan        { color: #ff8833; }
+        .flux-ip-total.probe       { color: #bbaa00; }
+        .flux-port-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 3px 12px 3px 28px; border-top: 1px solid #0a0a0a;
+        }
+        .flux-port-row:hover { background: #0d0d0d; }
+        .flux-port-num { width: 38px; font-size: 10px; color: #555; flex-shrink: 0; }
+        .flux-port-svc { flex: 1; font-size: 9px; color: #3a3a3a; }
+        .flux-port-cnt { font-size: 10px; font-weight: bold; color: #666; flex-shrink: 0; }
+        .flux-port-rate { font-size: 9px; color: #2a2a2a; flex-shrink: 0; width: 36px; text-align: right; }
+
         /* Indicateur de niveau de menace dans la barre de stats */
         .threat-indicator {
             display: flex;
@@ -600,6 +709,7 @@
         <button class="btn" id="btn-export"  title="Exporter les evenements recents en CSV">EXPORTER</button>
         <button class="btn" id="btn-ips"     title="Statistiques par IP et alertes mail">IPS</button>
         <button class="btn" id="btn-nft"     title="Gestion nftables et blocklist">NFTABLES</button>
+        <button class="btn" id="btn-flux"    title="Visualisation du trafic hostile">FLUX</button>
         <button class="btn" id="btn-email"   title="Configurer les alertes par email">CONFIG MAIL</button>
     </div>
 </header>
@@ -646,6 +756,7 @@
         <div class="ip-panel-header">
             <span class="ip-panel-title">NFTABLES</span>
             <button class="panel-tab active" id="nft-tab-blocked">BLOCKLIST</button>
+            <button class="panel-tab" id="nft-tab-editor">EDITEUR</button>
             <button class="panel-tab" id="nft-tab-rules">REGLES</button>
             <button class="btn" id="btn-nft-refresh" title="Actualiser">REFRESH</button>
         </div>
@@ -666,8 +777,65 @@
         <div id="nft-list-blocked" class="ip-list">
             <div class="ip-empty">AUCUNE IP BLOQUEE</div>
         </div>
+        <!-- Vue editeur de regles -->
+        <div id="nft-list-editor" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
+            <!-- Selecteurs table / chaine -->
+            <div class="nft-sel-row">
+                <select id="nft-sel-table" title="Selectionner la table"></select>
+                <select id="nft-sel-chain" title="Selectionner la chaine"></select>
+            </div>
+            <!-- Cartes de regles -->
+            <div id="nft-rule-cards" class="ip-list" style="flex:1;"></div>
+            <!-- Formulaire ajout de regle -->
+            <div class="nft-add-form">
+                <div class="nft-add-title">AJOUTER UNE REGLE</div>
+                <div class="nft-add-row">
+                    <input id="nft-add-ip"    placeholder="IP/CIDR source (optionnel)" title="Ex: 1.2.3.4 ou 10.0.0.0/8">
+                    <input id="nft-add-port"  type="number" min="0" max="65535" placeholder="Port (0=tous)">
+                </div>
+                <div class="nft-add-row">
+                    <select id="nft-add-proto">
+                        <option value="any">Protocole : TOUS</option>
+                        <option value="tcp">TCP</option>
+                        <option value="udp">UDP</option>
+                    </select>
+                    <select id="nft-add-action">
+                        <option value="drop">DROP</option>
+                        <option value="accept">ACCEPT</option>
+                        <option value="reject">REJECT</option>
+                    </select>
+                    <button class="btn" id="nft-btn-add-rule">AJOUTER</button>
+                </div>
+                <div class="block-msg" id="nft-add-msg"></div>
+            </div>
+        </div>
         <!-- Vue ruleset complet -->
         <div id="nft-list-rules" class="nft-ruleset" style="display:none"></div>
+    </div>
+
+    <!-- Panneau flux de trafic hostile (toggle) -->
+    <div id="flux-panel" class="ip-panel" style="width:420px;">
+        <div class="ip-panel-header">
+            <span class="ip-panel-title">TRAFIC HOSTILE</span>
+            <button class="btn" id="btn-flux-refresh" title="Actualiser">REFRESH</button>
+        </div>
+        <div class="ip-panel-summary" id="flux-summary">-</div>
+        <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column;">
+            <!-- Scans actifs -->
+            <div id="flux-scans"></div>
+            <!-- Heatmap des ports -->
+            <div class="flux-section-title">PORTS CIBLES</div>
+            <div id="flux-heatmap"></div>
+            <!-- Timeline 60 minutes -->
+            <div class="timeline-section">
+                <div class="timeline-title">ACTIVITE SUR 60 MINUTES  (clic = filtrer)</div>
+                <div class="timeline-bars" id="timeline-bars"></div>
+                <div class="timeline-labels" id="timeline-labels"></div>
+            </div>
+            <!-- Flux par IP -->
+            <div class="flux-section-title">FLUX PAR IP</div>
+            <div id="flux-flows" class="ip-list" style="flex:1;"></div>
+        </div>
     </div>
 
 </div>
@@ -1724,6 +1892,537 @@
         }
     }, true); // capture pour s'executer avant le handler existant
 
+
+    // ---------------------------------------------------------------------------
+    // Onglet EDITEUR dans le panneau nftables
+    // ---------------------------------------------------------------------------
+    let nftEditorData = null;  // cache des donnees retournees par /api/nftables/rules
+
+    document.getElementById('nft-tab-editor').addEventListener('click', () => {
+        nftActiveTab = 'editor';
+        ['nft-tab-blocked','nft-tab-editor','nft-tab-rules'].forEach(id =>
+            document.getElementById(id).classList.toggle('active', id === 'nft-tab-editor'));
+        document.getElementById('nft-list-blocked').style.display = 'none';
+        document.getElementById('nft-list-editor').style.display  = 'flex';
+        document.getElementById('nft-list-rules').style.display   = 'none';
+        fetchNftEditor();
+    });
+
+    // Modifier le handler nft-tab-rules pour mettre a jour nftActiveTab correctement
+    document.getElementById('nft-tab-rules').addEventListener('click', () => {
+        nftActiveTab = 'rules';
+        ['nft-tab-blocked','nft-tab-editor','nft-tab-rules'].forEach(id =>
+            document.getElementById(id).classList.toggle('active', id === 'nft-tab-rules'));
+        document.getElementById('nft-list-blocked').style.display = 'none';
+        document.getElementById('nft-list-editor').style.display  = 'none';
+        document.getElementById('nft-list-rules').style.display   = '';
+        fetchNftRuleset();
+    });
+
+    // Etendre le handler nft-tab-blocked
+    document.getElementById('nft-tab-blocked').addEventListener('click', () => {
+        nftActiveTab = 'blocked';
+        ['nft-tab-blocked','nft-tab-editor','nft-tab-rules'].forEach(id =>
+            document.getElementById(id).classList.toggle('active', id === 'nft-tab-blocked'));
+        document.getElementById('nft-list-blocked').style.display = '';
+        document.getElementById('nft-list-editor').style.display  = 'none';
+        document.getElementById('nft-list-rules').style.display   = 'none';
+        fetchBlockedIps();
+    });
+
+    // Etendre le handler refresh pour l'editeur
+    const _origNftRefresh = btnNftRefresh.onclick;
+    btnNftRefresh.addEventListener('click', () => {
+        if (nftActiveTab === 'editor') fetchNftEditor();
+    });
+
+    async function fetchNftEditor() {
+        const cardsDiv = document.getElementById('nft-rule-cards');
+        cardsDiv.innerHTML = '<div class="ip-empty">Chargement...</div>';
+        try {
+            const r = await fetch('/api/nftables/rules');
+            nftEditorData = await r.json();
+            if (!nftEditorData.json_available) {
+                cardsDiv.innerHTML =
+                    '<div class="ip-empty" style="color:#553300">nft -j non disponible<br>'
+                    + 'Mettez a jour nftables (>= 0.9.1)<br>'
+                    + '<span style="color:#2a2a2a;font-size:9px">' + (nftEditorData.raw || '') + '</span></div>';
+                return;
+            }
+            populateNftSelectors(nftEditorData);
+            renderNftRules();
+        } catch(e) {
+            cardsDiv.innerHTML = '<div class="ip-error">ERREUR : ' + e.message + '</div>';
+        }
+    }
+
+    function populateNftSelectors(data) {
+        const selTable = document.getElementById('nft-sel-table');
+        const selChain = document.getElementById('nft-sel-chain');
+        const prevTable = selTable.value;
+
+        selTable.innerHTML = '';
+        const tableKeys = [...new Set(data.tables.map(t => t.family + ' ' + t.name))];
+        tableKeys.forEach(key => {
+            const opt = document.createElement('option');
+            opt.value = key; opt.textContent = key;
+            selTable.appendChild(opt);
+        });
+        if (prevTable && tableKeys.includes(prevTable)) selTable.value = prevTable;
+
+        updateChainSelector(data);
+
+        selTable.onchange = () => { updateChainSelector(data); renderNftRules(); };
+        selChain.onchange = () => renderNftRules();
+    }
+
+    function updateChainSelector(data) {
+        const selTable = document.getElementById('nft-sel-table');
+        const selChain = document.getElementById('nft-sel-chain');
+        const [family, table] = selTable.value.split(' ');
+        const prevChain = selChain.value;
+        selChain.innerHTML = '';
+        data.chains
+            .filter(c => c.family === family && c.table === table)
+            .forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.name;
+                opt.textContent = c.name + (c.hook ? ' [' + c.hook + ']' : '');
+                selChain.appendChild(opt);
+            });
+        if (prevChain) selChain.value = prevChain;
+        // Pre-remplir la table/chaine de l'editeur d'ajout
+        document.getElementById('nft-add-ip').dataset.family = family;
+        document.getElementById('nft-add-ip').dataset.table  = table;
+    }
+
+    function renderNftRules() {
+        if (!nftEditorData || !nftEditorData.json_available) return;
+        const selTable = document.getElementById('nft-sel-table');
+        const selChain = document.getElementById('nft-sel-chain');
+        const [family, table] = selTable.value.split(' ');
+        const chain = selChain.value;
+        const cards = document.getElementById('nft-rule-cards');
+        cards.innerHTML = '';
+
+        const rules = nftEditorData.rules.filter(r =>
+            r.family === family && r.table === table && r.chain === chain);
+
+        document.getElementById('nft-summary').textContent =
+            table + ' / ' + chain + ' — ' + rules.length + ' regle(s)';
+
+        if (!rules.length) {
+            cards.innerHTML = '<div class="ip-empty">AUCUNE REGLE DANS CETTE CHAINE</div>';
+            return;
+        }
+
+        rules.forEach(r => {
+            const card = document.createElement('div');
+            card.className = 'nft-rule-card';
+
+            const top = document.createElement('div');
+            top.className = 'nft-rule-card-top';
+
+            // Handle
+            const handle = document.createElement('span');
+            handle.className = 'nft-handle';
+            handle.textContent = '#' + r.handle;
+            top.appendChild(handle);
+
+            // Action badge
+            const actionBadge = document.createElement('span');
+            actionBadge.className = 'nft-action-badge ' + r.action;
+            actionBadge.textContent = r.action.toUpperCase();
+            top.appendChild(actionBadge);
+
+            // IP source
+            if (r.saddr) {
+                const pill = document.createElement('span');
+                pill.className = 'nft-pill ip';
+                pill.textContent = 'src ' + r.saddr;
+                top.appendChild(pill);
+            }
+
+            // Port
+            if (r.dport) {
+                const pill = document.createElement('span');
+                pill.className = 'nft-pill port';
+                pill.textContent = (r.proto || '') + ':' + r.dport;
+                top.appendChild(pill);
+            }
+
+            // Set reference (@blocklist)
+            if (!r.saddr && !r.dport && r.action !== 'unknown') {
+                const pill = document.createElement('span');
+                pill.className = 'nft-pill set';
+                pill.textContent = 'policy rule';
+                top.appendChild(pill);
+            }
+
+            // Compteurs
+            if (r.packets !== null && r.packets !== undefined) {
+                const ctr = document.createElement('span');
+                ctr.className = 'nft-counter';
+                ctr.textContent = formatCount(r.packets) + ' pkts  ' + formatBytes(r.bytes);
+                top.appendChild(ctr);
+            }
+
+            // Bouton supprimer
+            const delBtn = document.createElement('button');
+            delBtn.className = 'nft-del-btn';
+            delBtn.textContent = 'SUPPR';
+            delBtn.title = 'Supprimer la regle #' + r.handle;
+            delBtn.addEventListener('click', async () => {
+                if (!confirm('Supprimer la regle #' + r.handle + ' (' + r.action + ') ?')) return;
+                delBtn.disabled = true;
+                try {
+                    const resp = await fetch('/api/nftables/rule', {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({family: r.family, table: r.table,
+                                              chain: r.chain, handle: r.handle})
+                    });
+                    const res = await resp.json();
+                    if (res.status === 'ok') {
+                        showBlockMsg('Regle #' + r.handle + ' supprimee.');
+                        await fetchNftEditor();
+                    } else {
+                        showBlockMsg(res.error || 'Erreur suppression.', true);
+                        delBtn.disabled = false;
+                    }
+                } catch(e) {
+                    showBlockMsg('Erreur reseau.', true);
+                    delBtn.disabled = false;
+                }
+            });
+            top.appendChild(delBtn);
+            card.appendChild(top);
+
+            // Commentaire
+            if (r.comment) {
+                const cmtDiv = document.createElement('div');
+                cmtDiv.style.cssText = 'font-size:9px;color:#2a2a2a;margin-top:2px;';
+                cmtDiv.textContent = r.comment;
+                card.appendChild(cmtDiv);
+            }
+
+            cards.appendChild(card);
+        });
+    }
+
+    function formatCount(n) {
+        if (n === null || n === undefined) return '0';
+        if (n >= 1e9) return (n/1e9).toFixed(1) + 'G';
+        if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+        if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+        return String(n);
+    }
+    function formatBytes(n) {
+        if (!n) return '0B';
+        if (n >= 1073741824) return (n/1073741824).toFixed(1) + 'GB';
+        if (n >= 1048576)    return (n/1048576).toFixed(1) + 'MB';
+        if (n >= 1024)       return (n/1024).toFixed(1) + 'KB';
+        return n + 'B';
+    }
+
+    // Formulaire ajout de regle
+    document.getElementById('nft-btn-add-rule').addEventListener('click', async () => {
+        const selTable = document.getElementById('nft-sel-table');
+        const selChain = document.getElementById('nft-sel-chain');
+        if (!selTable.value) { showNftAddMsg('Selectionnez une table.', true); return; }
+        const [family, table] = selTable.value.split(' ');
+        const chain  = selChain.value;
+        const ip     = document.getElementById('nft-add-ip').value.trim();
+        const port   = parseInt(document.getElementById('nft-add-port').value) || 0;
+        const proto  = document.getElementById('nft-add-proto').value;
+        const action = document.getElementById('nft-add-action').value;
+        try {
+            const resp = await fetch('/api/nftables/add-rule', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({family, table, chain, ip, port, proto, action})
+            });
+            const res = await resp.json();
+            if (res.status === 'ok') {
+                showNftAddMsg(res.message || 'Regle ajoutee.');
+                document.getElementById('nft-add-ip').value   = '';
+                document.getElementById('nft-add-port').value = '';
+                await fetchNftEditor();
+            } else {
+                showNftAddMsg(res.error || 'Erreur.', true);
+            }
+        } catch(e) { showNftAddMsg('Erreur reseau.', true); }
+    });
+
+    function showNftAddMsg(msg, isErr = false) {
+        const el = document.getElementById('nft-add-msg');
+        el.textContent = msg;
+        el.className   = 'block-msg ' + (isErr ? 'err' : 'ok');
+        setTimeout(() => { el.textContent = ''; el.className = 'block-msg'; }, 4000);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Panneau FLUX trafic hostile
+    // ---------------------------------------------------------------------------
+    const fluxPanel        = document.getElementById('flux-panel');
+    const btnFlux          = document.getElementById('btn-flux');
+    const btnFluxRefresh   = document.getElementById('btn-flux-refresh');
+    let   fluxRefreshInterval = null;
+    let   timelineSelected    = null;  // minute selectionnee pour filtre logs
+
+    function _closeAllPanels() {
+        [ipPanel, nftPanel, fluxPanel].forEach(p => p.classList.remove('open'));
+        [btnIps, btnNft, btnFlux].forEach(b => b.classList.remove('alert-active'));
+        [ipRefreshInterval, alertRefreshInterval, nftRefreshInterval, fluxRefreshInterval]
+            .forEach(id => clearInterval(id));
+        ipRefreshInterval = alertRefreshInterval = nftRefreshInterval = fluxRefreshInterval = null;
+    }
+
+    btnFlux.addEventListener('click', () => {
+        const wasOpen = fluxPanel.classList.contains('open');
+        _closeAllPanels();
+        if (!wasOpen) {
+            fluxPanel.classList.add('open');
+            btnFlux.classList.add('alert-active');
+            fetchFlux();
+            fluxRefreshInterval = setInterval(fetchFlux, 10000);
+        }
+    });
+    btnFluxRefresh.addEventListener('click', fetchFlux);
+
+    // Etendre les handlers IPS et NFT pour fermer les autres panneaux
+    btnIps.addEventListener('click', () => {
+        if (fluxPanel.classList.contains('open')) {
+            fluxPanel.classList.remove('open');
+            btnFlux.classList.remove('alert-active');
+            clearInterval(fluxRefreshInterval); fluxRefreshInterval = null;
+        }
+    }, true);
+    btnNft.addEventListener('click', () => {
+        if (fluxPanel.classList.contains('open')) {
+            fluxPanel.classList.remove('open');
+            btnFlux.classList.remove('alert-active');
+            clearInterval(fluxRefreshInterval); fluxRefreshInterval = null;
+        }
+    }, true);
+
+    async function fetchFlux() {
+        try {
+            const r = await fetch('/api/flux');
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            renderScans(data.active_scans || []);
+            renderHeatmap(data.port_heatmap || []);
+            renderTimeline(data.timeline || []);
+            renderFlows(data.flows || []);
+            const total = (data.flows || []).reduce((s, f) => s + f.count, 0);
+            document.getElementById('flux-summary').textContent =
+                (data.flows || []).length + ' flux  |  ' + total + ' evenements  |  '
+                + (data.active_scans || []).length + ' scan(s) actif(s)';
+        } catch(e) {
+            document.getElementById('flux-flows').innerHTML =
+                '<div class="ip-error">ERREUR : ' + e.message + '</div>';
+        }
+    }
+
+    function renderScans(scans) {
+        const el = document.getElementById('flux-scans');
+        el.innerHTML = '';
+        scans.forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'scan-alert';
+
+            const top = document.createElement('div');
+            top.className = 'scan-alert-top';
+
+            const badge = document.createElement('span');
+            badge.className = 'scan-badge'; badge.textContent = 'SCAN';
+            top.appendChild(badge);
+
+            const ip = document.createElement('span');
+            ip.className = 'scan-ip'; ip.textContent = s.ip;
+            top.appendChild(ip);
+
+            const cnt = document.createElement('span');
+            cnt.style.cssText = 'font-size:9px;color:#553300;';
+            cnt.textContent = s.port_count + ' ports';
+            top.appendChild(cnt);
+
+            const ports = document.createElement('div');
+            ports.className = 'scan-ports';
+            ports.textContent = 'Ports : ' + s.ports.join(', ')
+                + '  —  debut ' + relativeTime(s.started.replace(' ','T') + 'Z');
+            div.appendChild(top);
+            div.appendChild(ports);
+            el.appendChild(div);
+        });
+    }
+
+    function renderHeatmap(data) {
+        const el = document.getElementById('flux-heatmap');
+        el.innerHTML = '';
+        if (!data.length) {
+            el.innerHTML = '<div class="ip-empty">AUCUN PORT CIBLE</div>';
+            return;
+        }
+        const maxCnt = data[0].count;
+        const TREND_SYMBOLS = {up: '▲', down: '▼', stable: '—'};
+        data.forEach(d => {
+            const row = document.createElement('div');
+            row.className = 'heatmap-row';
+
+            const port = document.createElement('span');
+            port.className = 'heatmap-port'; port.textContent = d.port || '?';
+            row.appendChild(port);
+
+            const svc = document.createElement('span');
+            svc.className = 'heatmap-svc'; svc.textContent = d.service || '';
+            row.appendChild(svc);
+
+            const bar = document.createElement('div');
+            bar.className = 'heatmap-bar';
+            const fill = document.createElement('div');
+            fill.className = 'heatmap-fill';
+            fill.style.width = Math.max(3, Math.round(d.count / maxCnt * 100)) + '%';
+            bar.appendChild(fill); row.appendChild(bar);
+
+            const cnt = document.createElement('span');
+            cnt.className = 'heatmap-cnt'; cnt.textContent = d.count;
+            row.appendChild(cnt);
+
+            const trend = document.createElement('span');
+            trend.className = 'heatmap-trend ' + d.trend;
+            trend.textContent = TREND_SYMBOLS[d.trend] || '';
+            row.appendChild(trend);
+
+            el.appendChild(row);
+        });
+    }
+
+    function renderTimeline(buckets) {
+        const barsEl   = document.getElementById('timeline-bars');
+        const labelsEl = document.getElementById('timeline-labels');
+        barsEl.innerHTML = ''; labelsEl.innerHTML = '';
+        const maxCnt = Math.max(1, ...buckets.map(b => b.count));
+
+        buckets.forEach((b, i) => {
+            const bar = document.createElement('div');
+            const pct = Math.max(2, Math.round(b.count / maxCnt * 100));
+            bar.className = 'timeline-bar' + (b.count === 0 ? ' empty' : ' active');
+            bar.style.height = pct + '%';
+            bar.title = b.minute + '  ' + b.count + ' evt';
+            if (b.count > 0) {
+                bar.addEventListener('click', () => {
+                    const isSel = bar.classList.contains('selected');
+                    barsEl.querySelectorAll('.timeline-bar.selected')
+                          .forEach(el => el.classList.remove('selected'));
+                    if (isSel) {
+                        // Deselectionner : effacer filtre
+                        timelineSelected = null;
+                        state.searchQuery = '';
+                        searchInput.value = '';
+                        searchInput.dispatchEvent(new Event('input'));
+                    } else {
+                        bar.classList.add('selected');
+                        timelineSelected = b.minute;
+                        state.searchQuery = b.minute;
+                        searchInput.value = b.minute;
+                        searchInput.dispatchEvent(new Event('input'));
+                    }
+                });
+            }
+            barsEl.appendChild(bar);
+        });
+
+        // Labels toutes les 10 minutes
+        [0, 10, 20, 30, 40, 50, 59].forEach(i => {
+            const lbl = document.createElement('span');
+            lbl.textContent = buckets[i] ? buckets[i].minute : '';
+            labelsEl.appendChild(lbl);
+        });
+    }
+
+    function renderFlows(flows) {
+        const el = document.getElementById('flux-flows');
+        el.innerHTML = '';
+        if (!flows.length) {
+            el.innerHTML = '<div class="ip-empty">AUCUN FLUX HOSTILE RECENT</div>';
+            return;
+        }
+
+        // Grouper par IP
+        const byIp = {};
+        flows.forEach(f => {
+            if (!byIp[f.source_ip]) byIp[f.source_ip] = {flows: [], total: 0, threat: f.threat_level};
+            byIp[f.source_ip].flows.push(f);
+            byIp[f.source_ip].total += f.count;
+            // escalader la menace
+            const ORDER = {probe:0, brute_force:1, scan:2};
+            if ((ORDER[f.threat_level] || 0) > (ORDER[byIp[f.source_ip].threat] || 0))
+                byIp[f.source_ip].threat = f.threat_level;
+        });
+
+        const THREAT_LABEL = {brute_force:'BRUTE', scan:'SCAN', probe:'PROBE'};
+        const sorted = Object.entries(byIp).sort((a,b) => b[1].total - a[1].total);
+
+        sorted.forEach(([ip, grp]) => {
+            const group = document.createElement('div');
+            group.className = 'flux-ip-group';
+
+            const header = document.createElement('div');
+            header.className = 'flux-ip-header';
+
+            const badge = document.createElement('span');
+            badge.className = 'ip-badge ' + grp.threat;
+            badge.textContent = THREAT_LABEL[grp.threat] || grp.threat.toUpperCase();
+            header.appendChild(badge);
+
+            const addr = document.createElement('span');
+            addr.className = 'flux-ip-addr'; addr.textContent = ip;
+            header.appendChild(addr);
+
+            const total = document.createElement('span');
+            total.className = 'flux-ip-total ' + grp.threat;
+            total.textContent = grp.total;
+            header.appendChild(total);
+
+            // Toggle ports au clic
+            let expanded = true;
+            const portsDiv = document.createElement('div');
+            grp.flows.sort((a,b) => b.count - a.count).forEach(f => {
+                const row = document.createElement('div');
+                row.className = 'flux-port-row';
+
+                const portNum = document.createElement('span');
+                portNum.className = 'flux-port-num';
+                portNum.textContent = f.target_port ? ':' + f.target_port : '-';
+                row.appendChild(portNum);
+
+                const svc = document.createElement('span');
+                svc.className = 'flux-port-svc'; svc.textContent = f.target_service || '';
+                row.appendChild(svc);
+
+                const cnt = document.createElement('span');
+                cnt.className = 'flux-port-cnt'; cnt.textContent = f.count;
+                row.appendChild(cnt);
+
+                const rate = document.createElement('span');
+                rate.className = 'flux-port-rate'; rate.textContent = f.rate + '/min';
+                row.appendChild(rate);
+
+                portsDiv.appendChild(row);
+            });
+
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                portsDiv.style.display = expanded ? '' : 'none';
+            });
+
+            group.appendChild(header);
+            group.appendChild(portsDiv);
+            el.appendChild(group);
+        });
+    }
 
     // ---------------------------------------------------------------------------
     // Demarrage
