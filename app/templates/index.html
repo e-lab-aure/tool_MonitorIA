@@ -383,6 +383,194 @@
 
         /* Etat de chargement du bouton refresh */
         .btn.loading { opacity: 0.5; cursor: default; }
+
+        /* Onglets du panneau lateral (IPS / ALERTES MAIL) */
+        .panel-tab {
+            background: transparent;
+            border: 1px solid #1c1c1c;
+            color: #3a3a3a;
+            padding: 2px 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 9px;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            transition: all 0.2s;
+        }
+        .panel-tab:hover  { border-color: #444; color: #888; }
+        .panel-tab.active { border-color: #555; color: #bbb; background: #111; }
+
+        /* Badge "NEW" pour les IPs vues pour la premiere fois dans les 24h */
+        .ip-badge.new { background:#001a00; color:#44ff44; border:1px solid #115511; }
+
+        /* Lignes de log contextuelles (clic sur une IP) */
+        .ip-log-lines {
+            margin-top: 5px;
+            padding-top: 5px;
+            border-top: 1px solid #111;
+        }
+        .ip-log-line-item {
+            font-size: 9px;
+            color: #3a3a3a;
+            word-break: break-all;
+            white-space: pre-wrap;
+            padding: 1px 0;
+            line-height: 1.5;
+            cursor: text;
+        }
+        .ip-log-line-item:hover { color: #666; }
+        .ip-log-empty { font-size: 9px; color: #2a2a2a; padding: 3px 0; }
+
+        /* Ligne d'alerte dans l'onglet historique */
+        .alert-row {
+            padding: 7px 12px 5px;
+            border-bottom: 1px solid #0e0e0e;
+            cursor: default;
+        }
+        .alert-row:hover { background: #0d0d0d; }
+        .alert-row-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+        .alert-ts { font-size: 9px; color: #2a2a2a; flex-shrink: 0; }
+        .alert-ip { font-size: 10px; color: #666; flex: 1; }
+        .alert-line { font-size: 9px; color: #2e2e2e; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
+
+        /* Textarea pour whitelist dans la modal */
+        .field textarea {
+            width: 100%;
+            background: #080808;
+            border: 1px solid #1c1c1c;
+            color: #666;
+            padding: 6px 9px;
+            font-family: inherit;
+            font-size: 10px;
+            outline: none;
+            transition: border-color 0.2s;
+            resize: vertical;
+            min-height: 60px;
+        }
+        .field textarea:focus { border-color: #333; }
+        .field textarea::placeholder { color: #222; }
+
+        /* Section pliable dans la modal */
+        .section-toggle {
+            font-size: 10px;
+            color: #333;
+            letter-spacing: 1px;
+            cursor: pointer;
+            margin: 14px 0 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #141414;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .section-toggle:hover { color: #555; }
+        .section-toggle .arrow { transition: transform 0.2s; }
+        .section-toggle.open .arrow { transform: rotate(90deg); }
+
+        /* Indicateur de niveau de menace dans la barre de stats */
+        .threat-indicator {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-left: auto;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+        .threat-badge {
+            padding: 2px 8px;
+            border-radius: 2px;
+            font-size: 9px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            transition: all 0.5s;
+        }
+        .threat-badge.calm     { background:#0a0a0a; color:#2a2a2a; border:1px solid #111; }
+        .threat-badge.low      { background:#001a00; color:#33aa33; border:1px solid #115511; }
+        .threat-badge.medium   { background:#1a1000; color:#cc7700; border:1px solid #442200; }
+        .threat-badge.high     { background:#1a0000; color:#ff4400; border:1px solid #441100; }
+        .threat-badge.critical { background:#2a0000; color:#ff0000; border:1px solid #660000;
+                                 animation: blink 0.6s infinite; }
+        .threat-detail { color: #2a2a2a; font-size: 9px; }
+
+        /* Bouton bloquer IP dans ip-row */
+        .btn-block {
+            background: transparent;
+            border: 1px solid #2a1111;
+            color: #662222;
+            padding: 1px 6px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 8px;
+            letter-spacing: 1px;
+            border-radius: 2px;
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+        .btn-block:hover          { border-color: #882222; color: #ff4444; }
+        .btn-block.blocked        { border-color: #441111; color: #441111; cursor: default; }
+        .btn-block.unblock        { border-color: #446622; color: #88aa44; }
+        .btn-block.unblock:hover  { border-color: #66aa22; color: #aadd44; }
+
+        /* Panneau NFTables */
+        .nft-actions {
+            display: flex;
+            gap: 5px;
+            padding: 6px 12px;
+            border-bottom: 1px solid #0e0e0e;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .nft-ruleset {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 12px;
+            font-size: 9px;
+            color: #3a3a3a;
+            white-space: pre;
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+        }
+        .nft-rule-keyword { color: #5577aa; }
+        .nft-rule-ip      { color: #55aa77; }
+        .nft-rule-action  { color: #aa5555; }
+
+        /* Formulaire blocage manuel */
+        .block-form {
+            display: flex;
+            gap: 5px;
+            padding: 6px 12px;
+            border-bottom: 1px solid #0e0e0e;
+            flex-shrink: 0;
+        }
+        .block-form input {
+            flex: 1;
+            background: #080808;
+            border: 1px solid #1c1c1c;
+            color: #aaa;
+            padding: 3px 8px;
+            font-family: inherit;
+            font-size: 10px;
+            outline: none;
+        }
+        .block-form input:focus { border-color: #333; }
+        .block-form input::placeholder { color: #2a2a2a; }
+        .block-msg { padding: 3px 12px; font-size: 9px; min-height: 18px; }
+        .block-msg.ok  { color: #33aa33; }
+        .block-msg.err { color: #cc3333; }
+
+        /* Ligne de l'IP bloquee */
+        .blocked-row {
+            padding: 5px 12px;
+            border-bottom: 1px solid #0e0e0e;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 10px;
+        }
+        .blocked-row:hover { background: #0d0d0d; }
+        .blocked-ip   { flex: 1; color: #666; }
+        .blocked-ts   { font-size: 9px; color: #2a2a2a; }
+        .blocked-reason { font-size: 9px; color: #444; flex: 0 0 auto; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -410,8 +598,9 @@
         <button class="btn" id="btn-scroll"  title="Activer/desactiver le scroll automatique">AUTO-SCROLL</button>
         <button class="btn" id="btn-clear"   title="Effacer les logs affiches">EFFACER</button>
         <button class="btn" id="btn-export"  title="Exporter les evenements recents en CSV">EXPORTER</button>
-        <button class="btn" id="btn-ips"     title="Statistiques par IP">IPS</button>
-        <button class="btn" id="btn-email"   title="Configurer les alertes par email">ALERTES</button>
+        <button class="btn" id="btn-ips"     title="Statistiques par IP et alertes mail">IPS</button>
+        <button class="btn" id="btn-nft"     title="Gestion nftables et blocklist">NFTABLES</button>
+        <button class="btn" id="btn-email"   title="Configurer les alertes par email">CONFIG MAIL</button>
     </div>
 </header>
 
@@ -421,6 +610,10 @@
     <div class="stat s">SUCCES <b id="cnt-success">0</b></div>
     <div class="stat n">BANS <b id="cnt-ban">0</b></div>
     <div class="stat t">TOTAL <b id="cnt-total">0</b></div>
+    <div class="threat-indicator">
+        <span class="threat-badge calm" id="threat-badge">CALME</span>
+        <span class="threat-detail" id="threat-detail"></span>
+    </div>
 </div>
 
 <!-- Zone principale : logs + panneau IP cote a cote -->
@@ -429,16 +622,52 @@
     <!-- Flux de logs -->
     <div id="log-container"></div>
 
-    <!-- Panneau statistiques par IP (toggle) -->
+    <!-- Panneau statistiques par IP + historique alertes (toggle) -->
     <div id="ip-panel" class="ip-panel">
         <div class="ip-panel-header">
-            <span class="ip-panel-title">IP STATS</span>
+            <span class="ip-panel-title">SURVEILLANCE</span>
+            <button class="panel-tab active" id="tab-ips">IPS</button>
+            <button class="panel-tab" id="tab-alerts">ALERTES MAIL</button>
             <button class="btn" id="btn-ip-refresh" title="Actualiser">REFRESH</button>
         </div>
         <div class="ip-panel-summary" id="ip-summary">-</div>
         <div class="ip-list" id="ip-list">
-            <div class="ip-empty">AUCUNE ACTIVITE HOSTILE DETECTEE</div>
+            <div id="ip-list-ips">
+                <div class="ip-empty">AUCUNE ACTIVITE HOSTILE DETECTEE</div>
+            </div>
+            <div id="ip-list-alerts" style="display:none">
+                <div class="ip-empty">AUCUNE ALERTE ENVOYEE</div>
+            </div>
         </div>
+    </div>
+
+    <!-- Panneau gestion nftables (toggle) -->
+    <div id="nft-panel" class="ip-panel">
+        <div class="ip-panel-header">
+            <span class="ip-panel-title">NFTABLES</span>
+            <button class="panel-tab active" id="nft-tab-blocked">BLOCKLIST</button>
+            <button class="panel-tab" id="nft-tab-rules">REGLES</button>
+            <button class="btn" id="btn-nft-refresh" title="Actualiser">REFRESH</button>
+        </div>
+        <!-- Formulaire de blocage manuel -->
+        <div class="block-form">
+            <input type="text" id="block-ip-input" placeholder="1.2.3.4  (blocage manuel)">
+            <button class="btn" id="btn-block-manual" title="Bloquer cette IP">BLOQUER</button>
+        </div>
+        <div class="block-msg" id="block-msg"></div>
+        <!-- Actions nftables -->
+        <div class="nft-actions">
+            <button class="btn" id="btn-nft-verify"  title="Verifier la configuration nftables">VERIFIER</button>
+            <button class="btn" id="btn-nft-restart" title="Redemarrer nftables">RELANCER</button>
+            <button class="btn" id="btn-nft-setup"   title="Creer la table monitoria si absente">SETUP MONITORIA</button>
+        </div>
+        <div class="ip-panel-summary" id="nft-summary">-</div>
+        <!-- Vue blocklist -->
+        <div id="nft-list-blocked" class="ip-list">
+            <div class="ip-empty">AUCUNE IP BLOQUEE</div>
+        </div>
+        <!-- Vue ruleset complet -->
+        <div id="nft-list-rules" class="nft-ruleset" style="display:none"></div>
     </div>
 
 </div>
@@ -496,6 +725,25 @@
             </div>
         </div>
 
+        <!-- Section pliable : filtres de faux positifs -->
+        <div class="section-toggle" id="toggle-whitelist-section">
+            <span class="arrow">&#9658;</span> FILTRES &amp; LISTE BLANCHE
+        </div>
+        <div id="whitelist-section" style="display:none">
+            <div class="field">
+                <label>CIDRs en liste blanche (un par ligne)</label>
+                <textarea id="wl-cidrs" placeholder="127.0.0.0/8&#10;10.0.0.0/8&#10;192.168.0.0/16"></textarea>
+            </div>
+            <div class="field">
+                <label>IPs exactes en liste blanche (une par ligne)</label>
+                <textarea id="wl-ips" placeholder="1.2.3.4&#10;5.6.7.8"></textarea>
+            </div>
+            <div class="field">
+                <label>Regles d'exception JSON (tableau, une par ligne)</label>
+                <textarea id="wl-rules" placeholder='{"type":"success","user_pattern":"root","src_pattern":"127\\."}' style="min-height:80px"></textarea>
+            </div>
+        </div>
+
         <div class="feedback" id="feedback"></div>
 
         <div class="modal-actions">
@@ -519,6 +767,40 @@
         // Titre original pour restaurer apres notification
         baseTitle: 'MonitorIA'
     };
+
+    // ---------------------------------------------------------------------------
+    // Indicateur de menace temps reel (calcule depuis les evenements SSE recus)
+    // Declare ici pour etre disponible dans appendLog
+    // ---------------------------------------------------------------------------
+    const THREAT_WINDOW_MS = 15 * 60 * 1000;
+    const recentHostile    = [];
+    const THREAT_LEVELS    = {
+        calm:     'CALME',
+        low:      'FAIBLE',
+        medium:   'MOYEN',
+        high:     'ELEVE',
+        critical: 'CRITIQUE'
+    };
+
+    function updateThreatIndicator() {
+        const cutoff = Date.now() - THREAT_WINDOW_MS;
+        while (recentHostile.length && recentHostile[0].ts < cutoff) recentHostile.shift();
+        const cnt  = recentHostile.length;
+        const rate = Math.round(cnt / 15 * 10) / 10;
+        let level  = 'calm';
+        if (rate > 20)     level = 'critical';
+        else if (rate > 5) level = 'high';
+        else if (rate > 1) level = 'medium';
+        else if (cnt > 0)  level = 'low';
+        const badge  = document.getElementById('threat-badge');
+        const detail = document.getElementById('threat-detail');
+        badge.textContent = THREAT_LEVELS[level];
+        badge.className   = 'threat-badge ' + level;
+        detail.textContent = cnt > 0 ? cnt + ' evt  ' + rate + '/min' : '';
+    }
+
+    // Set des IPs actuellement bloquees (mis a jour au chargement des stats IP)
+    let blockedIpsSet = new Set();
 
     // ---------------------------------------------------------------------------
     // Elements DOM frequemment utilises
@@ -633,6 +915,12 @@
         row.appendChild(txt);
 
         row.style.display = matchesFilters(row) ? 'flex' : 'none';
+
+        // Suivi des evenements hostiles pour l'indicateur de menace
+        if (['failure', 'wireguard_failure', 'ban', 'nftables'].includes(entry.type)) {
+            recentHostile.push({ ts: Date.now(), type: entry.type });
+            updateThreatIndicator();
+        }
 
         // Insertion en tete : les plus recents apparaissent en haut
         logContainer.prepend(row);
@@ -766,19 +1054,22 @@
         const total    = data.reduce((s, d) => s + d.count, 0);
         const bruteCnt = data.filter(d => d.threat === 'brute_force').length;
         const scanCnt  = data.filter(d => d.threat === 'scan').length;
+        const newCnt   = data.filter(d => d.is_new).length;
 
         let summary = data.length + ' IP(s)  |  ' + total + ' evenements';
         if (bruteCnt) summary += '  |  ' + bruteCnt + ' brute';
         if (scanCnt)  summary += '  |  ' + scanCnt  + ' scan';
+        if (newCnt)   summary += '  |  ' + newCnt   + ' nouvelles';
         ipSummary.textContent = summary;
 
-        ipList.innerHTML = '';
+        const container = document.getElementById('ip-list-ips');
+        container.innerHTML = '';
 
         if (!data.length) {
             const empty = document.createElement('div');
             empty.className   = 'ip-empty';
             empty.textContent = 'AUCUNE ACTIVITE HOSTILE DETECTEE';
-            ipList.appendChild(empty);
+            container.appendChild(empty);
             return;
         }
 
@@ -789,26 +1080,33 @@
                 .map(([k, v]) => k + ':' + v);
             const pct = Math.max(4, Math.round(d.count / maxCount * 100));
 
+            // Badge "NEW" si IP vue pour la premiere fois dans les 24h
+            const top = document.createElement('div');
+            top.className = 'ip-row-top';
+
+            if (d.is_new) {
+                const newBadge = document.createElement('span');
+                newBadge.className   = 'ip-badge new';
+                newBadge.textContent = 'NEW';
+                top.appendChild(newBadge);
+            }
+
             // Badge de menace
             const badge = document.createElement('span');
             badge.className   = 'ip-badge ' + d.threat;
             badge.textContent = THREAT_LABEL[d.threat] || d.threat.toUpperCase();
+            top.appendChild(badge);
 
             // Adresse IP
             const addr = document.createElement('span');
             addr.className   = 'ip-addr';
             addr.textContent = d.ip;
+            top.appendChild(addr);
 
             // Compteur
             const count = document.createElement('span');
             count.className   = 'ip-count ' + d.threat;
             count.textContent = d.count;
-
-            // Ligne du haut
-            const top = document.createElement('div');
-            top.className = 'ip-row-top';
-            top.appendChild(badge);
-            top.appendChild(addr);
             top.appendChild(count);
 
             // Barre de progression
@@ -819,7 +1117,7 @@
             bar.className = 'ip-bar';
             bar.appendChild(barFill);
 
-            // Meta (services, temps)
+            // Meta (services, temps, taux)
             const svcSpan = document.createElement('span');
             svcSpan.className   = 'svc';
             svcSpan.textContent = svcParts.join('  ');
@@ -836,13 +1134,84 @@
             meta.appendChild(firstSpan);
             meta.appendChild(lastSpan);
 
-            // Ligne complete
+            if (d.rate_per_hour > 0) {
+                const rateSpan = document.createElement('span');
+                rateSpan.textContent = d.rate_per_hour + '/h';
+                meta.appendChild(rateSpan);
+            }
+
+            // Bouton BLOQUER / BLOQUE
+            const isBlocked = blockedIpsSet.has(d.ip);
+            const blockBtn = document.createElement('button');
+            blockBtn.className   = 'btn-block' + (isBlocked ? ' blocked' : '');
+            blockBtn.textContent = isBlocked ? 'BLOQUE' : 'BLOQUER';
+            blockBtn.disabled    = isBlocked;
+            if (!isBlocked) {
+                blockBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    blockBtn.disabled    = true;
+                    blockBtn.textContent = '...';
+                    try {
+                        const resp = await fetch('/api/block-ip', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                ip:     d.ip,
+                                reason: 'IPS - ' + d.threat + ' ' + d.count + ' evt'
+                            })
+                        });
+                        const res = await resp.json();
+                        if (res.status === 'ok') {
+                            blockBtn.className   = 'btn-block blocked';
+                            blockBtn.textContent = 'BLOQUE';
+                            blockedIpsSet.add(d.ip);
+                        } else {
+                            blockBtn.disabled    = false;
+                            blockBtn.textContent = 'BLOQUER';
+                        }
+                    } catch (err) {
+                        blockBtn.disabled    = false;
+                        blockBtn.textContent = 'BLOQUER';
+                    }
+                });
+            }
+            top.appendChild(blockBtn);
+
+            // Ligne complete - clic pour afficher/masquer les lignes de log contextuelles
             const row = document.createElement('div');
             row.className = 'ip-row';
+            row.style.cursor = 'pointer';
+            row.title = 'Cliquer pour voir les lignes de log';
             row.appendChild(top);
             row.appendChild(bar);
             row.appendChild(meta);
-            ipList.appendChild(row);
+
+            row.addEventListener('click', () => {
+                const existing = row.querySelector('.ip-log-lines');
+                if (existing) {
+                    existing.remove();
+                    return;
+                }
+                const logDiv = document.createElement('div');
+                logDiv.className = 'ip-log-lines';
+                if (d.log_lines && d.log_lines.length) {
+                    // Plus recentes en premier
+                    d.log_lines.slice().reverse().forEach(l => {
+                        const s = document.createElement('div');
+                        s.className   = 'ip-log-line-item';
+                        s.textContent = l;
+                        logDiv.appendChild(s);
+                    });
+                } else {
+                    const e = document.createElement('div');
+                    e.className   = 'ip-log-empty';
+                    e.textContent = 'Aucune ligne de log disponible';
+                    logDiv.appendChild(e);
+                }
+                row.appendChild(logDiv);
+            });
+
+            container.appendChild(row);
         });
     }
 
@@ -851,35 +1220,149 @@
         btnIpRefresh.classList.add('loading');
         btnIpRefresh.disabled = true;
         try {
-            const r = await fetch('/api/ip-stats');
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            renderIpStats(await r.json());
+            // Charger en parallele les stats IP et la liste des IPs bloquees
+            const [rStats, rBlocked] = await Promise.all([
+                fetch('/api/ip-stats'),
+                fetch('/api/blocked-ips')
+            ]);
+            if (!rStats.ok) throw new Error('HTTP ' + rStats.status);
+            const [statsData, blockedData] = await Promise.all([
+                rStats.json(),
+                rBlocked.ok ? rBlocked.json() : Promise.resolve([])
+            ]);
+            blockedIpsSet = new Set(blockedData.map(d => d.ip));
+            renderIpStats(statsData);
         } catch (e) {
-            ipList.innerHTML = '';
+            const container = document.getElementById('ip-list-ips');
+            container.innerHTML = '';
             const errDiv = document.createElement('div');
             errDiv.className   = 'ip-error';
             errDiv.textContent = 'ERREUR : impossible de charger les stats IP';
-            ipList.appendChild(errDiv);
+            container.appendChild(errDiv);
         } finally {
             btnIpRefresh.classList.remove('loading');
             btnIpRefresh.disabled = false;
         }
     }
 
+    /** Rendu de l'historique des alertes mail envoyees. */
+    function renderAlertHistory(data) {
+        const container = document.getElementById('ip-list-alerts');
+        container.innerHTML = '';
+
+        if (!data.length) {
+            const empty = document.createElement('div');
+            empty.className   = 'ip-empty';
+            empty.textContent = 'AUCUNE ALERTE ENVOYEE';
+            container.appendChild(empty);
+            return;
+        }
+
+        ipSummary.textContent = data.length + ' alerte(s) dans l\'historique';
+
+        data.forEach(a => {
+            const top = document.createElement('div');
+            top.className = 'alert-row-top';
+
+            // Badge type (reutilise les couleurs existantes des log-lines)
+            const badge = document.createElement('span');
+            badge.className   = 'ip-badge ' + (a.type === 'ban' ? 'brute_force' : a.type === 'failure' ? 'brute_force' : 'probe');
+            badge.textContent = (a.type || '').toUpperCase();
+            top.appendChild(badge);
+
+            const svcSpan = document.createElement('span');
+            svcSpan.style.fontSize = '10px';
+            svcSpan.style.color    = '#555';
+            svcSpan.textContent    = a.service || '';
+            top.appendChild(svcSpan);
+
+            const ipSpan = document.createElement('span');
+            ipSpan.className   = 'alert-ip';
+            ipSpan.textContent = a.ip || '-';
+            top.appendChild(ipSpan);
+
+            const tsSpan = document.createElement('span');
+            tsSpan.className   = 'alert-ts';
+            tsSpan.textContent = a.sent_at || '';
+            top.appendChild(tsSpan);
+
+            const lineDiv = document.createElement('div');
+            lineDiv.className   = 'alert-line';
+            lineDiv.textContent = a.line || '';
+
+            const row = document.createElement('div');
+            row.className = 'alert-row';
+            row.appendChild(top);
+            row.appendChild(lineDiv);
+            container.appendChild(row);
+        });
+    }
+
+    /** Interroge l'API et met a jour l'historique des alertes. */
+    async function fetchAlertHistory() {
+        try {
+            const r = await fetch('/api/alerts');
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            renderAlertHistory(await r.json());
+        } catch (e) {
+            const container = document.getElementById('ip-list-alerts');
+            container.innerHTML = '';
+            const errDiv = document.createElement('div');
+            errDiv.className   = 'ip-error';
+            errDiv.textContent = 'ERREUR : impossible de charger l\'historique';
+            container.appendChild(errDiv);
+        }
+    }
+
+    // Gestion des onglets IPS / ALERTES MAIL
+    let activeTab = 'ips';
+    let alertRefreshInterval = null;
+
+    document.getElementById('tab-ips').addEventListener('click', () => {
+        activeTab = 'ips';
+        document.getElementById('tab-ips').classList.add('active');
+        document.getElementById('tab-alerts').classList.remove('active');
+        document.getElementById('ip-list-ips').style.display = '';
+        document.getElementById('ip-list-alerts').style.display = 'none';
+        clearInterval(alertRefreshInterval);
+        alertRefreshInterval = null;
+        fetchIpStats();
+    });
+
+    document.getElementById('tab-alerts').addEventListener('click', () => {
+        activeTab = 'alerts';
+        document.getElementById('tab-alerts').classList.add('active');
+        document.getElementById('tab-ips').classList.remove('active');
+        document.getElementById('ip-list-alerts').style.display = '';
+        document.getElementById('ip-list-ips').style.display = 'none';
+        fetchAlertHistory();
+        alertRefreshInterval = setInterval(fetchAlertHistory, 30000);
+    });
+
     // Toggle ouverture / fermeture du panneau
     btnIps.addEventListener('click', () => {
         const open = ipPanel.classList.toggle('open');
         btnIps.classList.toggle('alert-active', open);
         if (open) {
-            fetchIpStats();
-            ipRefreshInterval = setInterval(fetchIpStats, 15000);
+            if (activeTab === 'ips') {
+                fetchIpStats();
+                ipRefreshInterval = setInterval(fetchIpStats, 15000);
+            } else {
+                fetchAlertHistory();
+                alertRefreshInterval = setInterval(fetchAlertHistory, 30000);
+            }
         } else {
             clearInterval(ipRefreshInterval);
-            ipRefreshInterval = null;
+            clearInterval(alertRefreshInterval);
+            ipRefreshInterval    = null;
+            alertRefreshInterval = null;
         }
     });
 
-    btnIpRefresh.addEventListener('click', fetchIpStats);
+    btnIpRefresh.addEventListener('click', () => {
+        if (activeTab === 'ips') fetchIpStats();
+        else fetchAlertHistory();
+    });
 
     // ---------------------------------------------------------------------------
     // Modal email
@@ -909,6 +1392,15 @@
 
             state.emailEnabled          = cfg.enabled || false;
             toggleEnabled.className     = 'toggle-switch' + (state.emailEnabled ? ' on' : '');
+
+            // Charger la whitelist
+            const wl = cfg.whitelist || {};
+            document.getElementById('wl-cidrs').value = (wl.cidrs || []).join('\n');
+            document.getElementById('wl-ips').value   = (wl.ips   || []).join('\n');
+
+            // Charger les regles d'exception (affichage une par ligne en JSON)
+            const rules = cfg.exception_rules || [];
+            document.getElementById('wl-rules').value = rules.map(r => JSON.stringify(r)).join('\n');
         } catch (e) {
             showFeedback('Erreur chargement configuration.', true);
         }
@@ -939,21 +1431,50 @@
         }
     });
 
+    // Toggle section whitelist
+    document.getElementById('toggle-whitelist-section').addEventListener('click', function() {
+        const section = document.getElementById('whitelist-section');
+        const visible = section.style.display !== 'none';
+        section.style.display = visible ? 'none' : '';
+        this.classList.toggle('open', !visible);
+    });
+
     document.getElementById('btn-save').addEventListener('click', async () => {
         const alertOn = [];
         if (document.getElementById('chk-success').checked) alertOn.push('success');
         if (document.getElementById('chk-failure').checked) alertOn.push('failure');
         if (document.getElementById('chk-ban').checked)     alertOn.push('ban');
 
+        // Construire la whitelist depuis les textareas
+        const wlCidrs = document.getElementById('wl-cidrs').value
+            .split('\n').map(s => s.trim()).filter(Boolean);
+        const wlIps   = document.getElementById('wl-ips').value
+            .split('\n').map(s => s.trim()).filter(Boolean);
+
+        // Parser les regles d'exception (une par ligne en JSON)
+        let exceptionRules = [];
+        const rulesRaw = document.getElementById('wl-rules').value
+            .split('\n').map(s => s.trim()).filter(Boolean);
+        for (const line of rulesRaw) {
+            try {
+                exceptionRules.push(JSON.parse(line));
+            } catch (e) {
+                showFeedback('Regle d\'exception JSON invalide : ' + line, true);
+                return;
+            }
+        }
+
         const payload = {
-            enabled:       state.emailEnabled,
-            smtp_host:     document.getElementById('smtp-host').value.trim(),
-            smtp_port:     parseInt(document.getElementById('smtp-port').value) || 587,
-            smtp_security: document.getElementById('smtp-security').value,
-            smtp_user:     document.getElementById('smtp-user').value.trim(),
-            smtp_pass:     document.getElementById('smtp-pass').value,
-            recipient:     document.getElementById('recipient').value.trim(),
-            alert_on:      alertOn
+            enabled:         state.emailEnabled,
+            smtp_host:       document.getElementById('smtp-host').value.trim(),
+            smtp_port:       parseInt(document.getElementById('smtp-port').value) || 587,
+            smtp_security:   document.getElementById('smtp-security').value,
+            smtp_user:       document.getElementById('smtp-user').value.trim(),
+            smtp_pass:       document.getElementById('smtp-pass').value,
+            recipient:       document.getElementById('recipient').value.trim(),
+            alert_on:        alertOn,
+            whitelist:       { cidrs: wlCidrs, ips: wlIps, patterns: [] },
+            exception_rules: exceptionRules
         };
 
         try {
@@ -987,6 +1508,222 @@
             showFeedback('Erreur reseau.', true);
         }
     });
+
+    setInterval(updateThreatIndicator, 30000);
+
+    // ---------------------------------------------------------------------------
+    // Panneau nftables
+    // ---------------------------------------------------------------------------
+    const nftPanel     = document.getElementById('nft-panel');
+    const btnNft       = document.getElementById('btn-nft');
+    const btnNftRefresh= document.getElementById('btn-nft-refresh');
+    let nftActiveTab   = 'blocked';
+    let nftRefreshInterval = null;
+
+    function showBlockMsg(msg, isErr = false) {
+        const el = document.getElementById('block-msg');
+        el.textContent = msg;
+        el.className   = 'block-msg ' + (isErr ? 'err' : 'ok');
+        setTimeout(() => { el.textContent = ''; el.className = 'block-msg'; }, 4000);
+    }
+
+    async function fetchBlockedIps() {
+        try {
+            const r = await fetch('/api/blocked-ips');
+            const data = await r.json();
+            blockedIpsSet = new Set(data.map(d => d.ip));
+            renderBlockedIps(data);
+        } catch (e) {
+            document.getElementById('nft-list-blocked').innerHTML =
+                '<div class="ip-error">ERREUR : chargement blocklist impossible</div>';
+        }
+    }
+
+    function renderBlockedIps(data) {
+        const container = document.getElementById('nft-list-blocked');
+        container.innerHTML = '';
+        document.getElementById('nft-summary').textContent =
+            data.length + ' IP(s) bloquee(s) par MonitorIA';
+
+        if (!data.length) {
+            container.innerHTML = '<div class="ip-empty">AUCUNE IP BLOQUEE</div>';
+            return;
+        }
+        data.forEach(d => {
+            const ipSpan = document.createElement('span');
+            ipSpan.className   = 'blocked-ip';
+            ipSpan.textContent = d.ip;
+
+            const reasonSpan = document.createElement('span');
+            reasonSpan.className   = 'blocked-reason';
+            reasonSpan.title       = d.reason || '';
+            reasonSpan.textContent = d.reason || '';
+
+            const tsSpan = document.createElement('span');
+            tsSpan.className   = 'blocked-ts';
+            tsSpan.textContent = d.blocked_at || '';
+
+            const unblockBtn = document.createElement('button');
+            unblockBtn.className   = 'btn-block unblock';
+            unblockBtn.textContent = 'DEBLOQUER';
+            unblockBtn.addEventListener('click', async () => {
+                unblockBtn.disabled = true;
+                try {
+                    const resp = await fetch('/api/unblock-ip', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ip: d.ip })
+                    });
+                    const res = await resp.json();
+                    if (res.status === 'ok') {
+                        showBlockMsg('IP ' + d.ip + ' debloquee.');
+                        fetchBlockedIps();
+                    } else {
+                        showBlockMsg(res.error || 'Erreur deblocage.', true);
+                        unblockBtn.disabled = false;
+                    }
+                } catch (e) {
+                    showBlockMsg('Erreur reseau.', true);
+                    unblockBtn.disabled = false;
+                }
+            });
+
+            const row = document.createElement('div');
+            row.className = 'blocked-row';
+            row.appendChild(ipSpan);
+            row.appendChild(reasonSpan);
+            row.appendChild(tsSpan);
+            row.appendChild(unblockBtn);
+            container.appendChild(row);
+        });
+    }
+
+    async function fetchNftRuleset() {
+        const container = document.getElementById('nft-list-rules');
+        container.textContent = 'Chargement...';
+        try {
+            const r = await fetch('/api/nftables/ruleset');
+            const data = await r.json();
+            if (data.ok) {
+                // Colorisation syntaxique minimaliste
+                container.innerHTML = '';
+                data.output.split('\n').forEach(line => {
+                    const div = document.createElement('div');
+                    // Mots cles nft en bleu, IPs en vert, actions drop/accept/reject en rouge
+                    let colored = line
+                        .replace(/\b(table|chain|set|type|flags|hook|priority|policy|rule|add|delete|element)\b/g,
+                                 '<span class="nft-rule-keyword">$1</span>')
+                        .replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:\/\d+)?)\b/g,
+                                 '<span class="nft-rule-ip">$1</span>')
+                        .replace(/\b(drop|reject|accept|counter|masquerade)\b/g,
+                                 '<span class="nft-rule-action">$1</span>');
+                    div.innerHTML = colored;
+                    container.appendChild(div);
+                });
+            } else {
+                container.textContent = 'ERREUR : ' + data.output;
+            }
+        } catch (e) {
+            container.textContent = 'ERREUR : chargement impossible';
+        }
+    }
+
+    // Gestion des onglets NFT
+    document.getElementById('nft-tab-blocked').addEventListener('click', () => {
+        nftActiveTab = 'blocked';
+        document.getElementById('nft-tab-blocked').classList.add('active');
+        document.getElementById('nft-tab-rules').classList.remove('active');
+        document.getElementById('nft-list-blocked').style.display = '';
+        document.getElementById('nft-list-rules').style.display = 'none';
+        fetchBlockedIps();
+    });
+    document.getElementById('nft-tab-rules').addEventListener('click', () => {
+        nftActiveTab = 'rules';
+        document.getElementById('nft-tab-rules').classList.add('active');
+        document.getElementById('nft-tab-blocked').classList.remove('active');
+        document.getElementById('nft-list-rules').style.display = '';
+        document.getElementById('nft-list-blocked').style.display = 'none';
+        fetchNftRuleset();
+    });
+
+    // Bouton BLOQUER manuel
+    document.getElementById('btn-block-manual').addEventListener('click', async () => {
+        const ip = document.getElementById('block-ip-input').value.trim();
+        if (!ip) { showBlockMsg('Entrez une adresse IP.', true); return; }
+        try {
+            const resp = await fetch('/api/block-ip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ip, reason: 'blocage manuel via dashboard' })
+            });
+            const res = await resp.json();
+            if (res.status === 'ok') {
+                showBlockMsg(res.message || 'IP bloquee.');
+                document.getElementById('block-ip-input').value = '';
+                fetchBlockedIps();
+            } else {
+                showBlockMsg(res.error || 'Erreur blocage.', true);
+            }
+        } catch (e) {
+            showBlockMsg('Erreur reseau.', true);
+        }
+    });
+
+    // Actions nftables (verify/restart/setup)
+    async function nftAction(action) {
+        try {
+            const resp = await fetch('/api/nftables/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            });
+            const res = await resp.json();
+            showBlockMsg(res.message || res.error || action + ' : ok', !!res.error);
+        } catch (e) {
+            showBlockMsg('Erreur reseau.', true);
+        }
+    }
+    document.getElementById('btn-nft-verify').addEventListener('click',  () => nftAction('verify'));
+    document.getElementById('btn-nft-restart').addEventListener('click', () => nftAction('restart'));
+    document.getElementById('btn-nft-setup').addEventListener('click',   () => nftAction('setup'));
+
+    // Refresh selon l'onglet actif
+    btnNftRefresh.addEventListener('click', () => {
+        if (nftActiveTab === 'blocked') fetchBlockedIps();
+        else fetchNftRuleset();
+    });
+
+    // Toggle ouverture / fermeture panneau nftables
+    btnNft.addEventListener('click', () => {
+        // Fermer le panneau IPS si ouvert
+        if (ipPanel.classList.contains('open')) {
+            ipPanel.classList.remove('open');
+            btnIps.classList.remove('alert-active');
+            clearInterval(ipRefreshInterval);
+            clearInterval(alertRefreshInterval);
+            ipRefreshInterval = alertRefreshInterval = null;
+        }
+        const open = nftPanel.classList.toggle('open');
+        btnNft.classList.toggle('alert-active', open);
+        if (open) {
+            fetchBlockedIps();
+            nftRefreshInterval = setInterval(fetchBlockedIps, 30000);
+        } else {
+            clearInterval(nftRefreshInterval);
+            nftRefreshInterval = null;
+        }
+    });
+
+    // Fermer nftables panel si IPS panel ouvre
+    btnIps.addEventListener('click', () => {
+        if (nftPanel.classList.contains('open')) {
+            nftPanel.classList.remove('open');
+            btnNft.classList.remove('alert-active');
+            clearInterval(nftRefreshInterval);
+            nftRefreshInterval = null;
+        }
+    }, true); // capture pour s'executer avant le handler existant
+
 
     // ---------------------------------------------------------------------------
     // Demarrage

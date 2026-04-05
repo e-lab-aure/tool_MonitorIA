@@ -4,8 +4,10 @@ Surveille les logs SSH, WireGuard, fail2ban et nftables via SSE.
 """
 
 import atexit
+import copy
 import csv
 import io
+import ipaddress
 import os
 import re
 import json
@@ -34,8 +36,13 @@ app.logger.setLevel(logging.INFO)
 # Configuration
 # ---------------------------------------------------------------------------
 
-CONFIG_PATH   = os.environ.get("CONFIG_PATH",   "/app/config/config.json")
-IP_STATS_PATH = os.environ.get("IP_STATS_PATH", "/app/config/ip_stats.json")
+CONFIG_PATH    = os.environ.get("CONFIG_PATH",    "/app/config/config.json")
+IP_STATS_PATH  = os.environ.get("IP_STATS_PATH",  "/app/config/ip_stats.json")
+BLOCKLIST_PATH = os.environ.get("BLOCKLIST_PATH", "/app/config/blocklist.json")
+
+# Table nftables geree par MonitorIA (creee automatiquement si absente)
+NFT_TABLE = "monitoria"
+NFT_SET   = "blocklist"
 
 # Duree de retention des stats IP : buckets plus vieux purges a la sauvegarde
 RETENTION_DAYS = 7
@@ -50,6 +57,9 @@ ALERT_COOLDOWN_SECONDS = 300  # 5 minutes
 # Nombre maximum d'evenements conserves en memoire pour l'export CSV
 EVENT_BUFFER_MAXLEN = 1000
 
+# Nombre de lignes de log brutes conservees par IP pour le contexte des attaques
+CONTEXT_LINES_MAX = 10
+
 # Port UDP WireGuard (51820 par defaut, surchargeable via variable d'environnement)
 WG_PORT = re.escape(os.environ.get("WG_PORT", "51820"))
 
@@ -61,7 +71,13 @@ DEFAULT_CONFIG = {
     "smtp_user":     "",
     "smtp_pass":     "",
     "recipient":     "",
-    "alert_on":      ["success"]
+    "alert_on":      ["success"],
+    "whitelist": {
+        "cidrs":    ["127.0.0.0/8", "::1", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12"],
+        "ips":      [],
+        "patterns": []
+    },
+    "exception_rules": []
 }
 
 email_config: dict = DEFAULT_CONFIG.copy()
@@ -82,6 +98,15 @@ clients_lock = threading.Lock()
 
 _event_buffer: deque = deque(maxlen=EVENT_BUFFER_MAXLEN)
 _buffer_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Whitelist IP : IPs/CIDRs/patterns exclus du suivi des menaces
+# ---------------------------------------------------------------------------
+
+_whitelist_cidrs:    list = []
+_whitelist_ips:      set  = set()
+_whitelist_patterns: list = []
+_whitelist_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Patterns de classification des logs
@@ -224,6 +249,96 @@ _alert_lock     = threading.Lock()
 # Derniere alerte envoyee par type d'evenement - evite le flood pendant une attaque
 _alert_cooldown: dict[str, datetime] = {}
 
+# Historique des alertes mail envoyees (100 dernieres)
+ALERT_LOG_MAXLEN = 100
+_alert_log: deque = deque(maxlen=ALERT_LOG_MAXLEN)
+_alert_log_lock = threading.Lock()
+
+
+def _compile_whitelist() -> None:
+    """
+    Parse la section whitelist de email_config en structures de recherche rapide.
+    Appele apres chaque chargement ou sauvegarde de la configuration.
+    """
+    global _whitelist_cidrs, _whitelist_ips, _whitelist_patterns
+    wl = email_config.get("whitelist", {})
+    cidrs = []
+    for cidr in wl.get("cidrs", []):
+        try:
+            cidrs.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError:
+            app.logger.warning(f"[WARNING] Whitelist CIDR invalide ignore : {cidr}")
+    ips = set(wl.get("ips", []))
+    patterns = []
+    for pat in wl.get("patterns", []):
+        try:
+            patterns.append(re.compile(pat))
+        except re.error:
+            app.logger.warning(f"[WARNING] Whitelist pattern regex invalide ignore : {pat}")
+    with _whitelist_lock:
+        _whitelist_cidrs    = cidrs
+        _whitelist_ips      = ips
+        _whitelist_patterns = patterns
+
+
+def is_whitelisted(ip: str) -> bool:
+    """
+    Retourne True si l'IP correspond a une entree de la whitelist.
+    Thread-safe via _whitelist_lock.
+    """
+    with _whitelist_lock:
+        if ip in _whitelist_ips:
+            return True
+        try:
+            addr = ipaddress.ip_address(ip)
+            for net in _whitelist_cidrs:
+                if addr in net:
+                    return True
+        except ValueError:
+            pass
+        for pat in _whitelist_patterns:
+            if pat.search(ip):
+                return True
+    return False
+
+
+_RE_SSH_USER = re.compile(r'\bfor\s+(\S+)\s+from\b', re.IGNORECASE)
+
+
+def _extract_user(line: str) -> str | None:
+    """Extrait le nom d'utilisateur d'une ligne de log SSH."""
+    m = _RE_SSH_USER.search(line)
+    return m.group(1) if m else None
+
+
+def matches_exception_rule(log_type: str, ip: str | None, line: str) -> bool:
+    """
+    Retourne True si l'evenement correspond a une regle d'exception configuree.
+    Chaque regle est un dict avec les cles optionnelles : type, user_pattern, src_pattern.
+    Toutes les cles presentes dans une regle doivent correspondre (ET).
+    Plusieurs regles sont evaluees en OU.
+    Exemple de regle pour filtrer les connexions root locales des crons :
+      {"type": "success", "user_pattern": "root", "src_pattern": "127\\."}
+    """
+    rules = email_config.get("exception_rules", [])
+    if not rules:
+        return False
+    user = _extract_user(line)
+    for rule in rules:
+        rule_type = rule.get("type")
+        if rule_type and rule_type != log_type:
+            continue
+        user_pat = rule.get("user_pattern")
+        if user_pat:
+            if not user or not re.search(user_pat, user):
+                continue
+        src_pat = rule.get("src_pattern")
+        if src_pat:
+            if not ip or not re.search(src_pat, ip):
+                continue
+        return True
+    return False
+
 
 def smtp_send(msg: MIMEMultipart) -> None:
     """
@@ -260,11 +375,20 @@ def send_alert(entry: dict) -> None:
     type d'evenement (ex: attaque par brute force SSH generant des centaines
     d'echecs). L'envoi est effectue dans un thread separe pour ne pas bloquer
     le flux de logs.
+    Les evenements en whitelist ou correspondant a une regle d'exception sont ignores.
     """
     if not email_config.get("enabled"):
         return
     alert_on = email_config.get("alert_on", ["success"])
     if entry["type"] not in alert_on:
+        return
+
+    # Ne pas alerter pour les IPs en liste blanche ou matchant une regle d'exception
+    line = entry.get("line", "")
+    ip   = extract_ip(line)
+    if ip and is_whitelisted(ip):
+        return
+    if matches_exception_rule(entry["type"], ip, line):
         return
 
     # Deduplication : une alerte par type d'evenement max toutes les 5 minutes
@@ -291,6 +415,16 @@ def send_alert(entry: dict) -> None:
             msg.attach(MIMEText(body, "plain"))
             smtp_send(msg)
             app.logger.info(f"[INFO] Alerte mail envoyee pour {entry['service']} - {entry['type']}")
+            # Enregistrement dans l'historique des alertes envoyees
+            record = {
+                "sent_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "type":    entry["type"],
+                "service": entry["service"],
+                "ip":      extract_ip(entry.get("line", "")),
+                "line":    entry["line"]
+            }
+            with _alert_log_lock:
+                _alert_log.appendleft(record)
         except smtplib.SMTPException as exc:
             app.logger.error(f"[ERROR] Envoi mail SMTP echoue : {exc}")
         except Exception as exc:
@@ -334,17 +468,32 @@ def extract_ip(line: str) -> str | None:
     return None
 
 
+# Poids par type d'evenement pour le calcul du score de menace.
+# Un ban fail2ban (confirmation externe) pese 3x une tentative brute.
+THREAT_WEIGHTS = {
+    "failure":           1.0,
+    "wireguard_failure": 0.8,
+    "ban":               3.0,
+    "nftables":          0.5,
+}
+
+
 def classify_threat(data: dict) -> str:
     """
     Classe le niveau de menace d'une IP selon ses tentatives :
     - scan        : plusieurs services cibles (reconnaissance du systeme)
-    - brute_force : beaucoup de tentatives concentrees sur un service
+    - brute_force : score pondere suffisamment eleve sur un seul service
     - probe       : tentatives isolees ou peu nombreuses
+    Le score pondere donne plus de poids aux bans fail2ban qu'aux tentatives brutes.
     """
     nb_svc = sum(1 for v in data["services"].values() if v > 0)
     if nb_svc >= SCAN_MIN_SERVICES:
         return "scan"
-    if data["count"] >= BRUTE_FORCE_MIN_COUNT:
+    score = sum(
+        data["types"].get(t, 0) * w
+        for t, w in THREAT_WEIGHTS.items()
+    )
+    if score >= BRUTE_FORCE_MIN_COUNT:
         return "brute_force"
     return "probe"
 
@@ -355,6 +504,7 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
     Un bucket est actif si sa date est dans la fenetre de retention.
     Doit etre appele sous _ip_lock (pas de verrou interne).
     Retourne None si aucun evenement actif n'existe.
+    Inclut les dernieres lignes de log brutes (contexte des attaques) et le taux horaire.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
     total_count = 0
@@ -362,6 +512,7 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
     last_seen:  str | None = None
     services: dict = {}
     types:    dict = {}
+    log_lines: list = []
 
     for day, bucket in buckets.items():
         if day < cutoff:
@@ -375,22 +526,41 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
             services[svc] = services.get(svc, 0) + n
         for t, n in bucket["types"].items():
             types[t] = types.get(t, 0) + n
+        log_lines.extend(bucket.get("log_lines", []))
 
     if total_count == 0:
         return None
+
+    # Garder uniquement les CONTEXT_LINES_MAX dernieres lignes
+    log_lines = log_lines[-CONTEXT_LINES_MAX:]
+
+    # Calcul du taux d'evenements par heure sur la plage observee
+    rate_per_hour = 0.0
+    try:
+        span_s = max(
+            1,
+            (datetime.fromisoformat(last_seen) - datetime.fromisoformat(first_seen)).total_seconds()
+        )
+        rate_per_hour = round(total_count / span_s * 3600, 1)
+    except Exception:
+        pass
+
     return {
-        "count":      total_count,
-        "first_seen": first_seen,
-        "last_seen":  last_seen,
-        "services":   services,
-        "types":      types
+        "count":         total_count,
+        "first_seen":    first_seen,
+        "last_seen":     last_seen,
+        "services":      services,
+        "types":         types,
+        "log_lines":     log_lines,
+        "rate_per_hour": rate_per_hour
     }
 
 
-def record_ip_event(ip: str, service: str, log_type: str) -> None:
+def record_ip_event(ip: str, service: str, log_type: str, line: str = "") -> None:
     """
     Enregistre une tentative hostile associee a une IP dans le bucket du jour.
     Cree le bucket du jour s'il n'existe pas encore.
+    Stocke les dernieres lignes de log brutes pour le contexte des attaques.
     """
     now     = datetime.now(timezone.utc)
     today   = now.date().isoformat()
@@ -405,13 +575,20 @@ def record_ip_event(ip: str, service: str, log_type: str) -> None:
                 "first_seen": now_iso,
                 "last_seen":  now_iso,
                 "services":   {},
-                "types":      {}
+                "types":      {},
+                "log_lines":  []
             }
         bucket = buckets[today]
         bucket["count"] += 1
         bucket["last_seen"] = now_iso
         bucket["services"][service] = bucket["services"].get(service, 0) + 1
         bucket["types"][log_type]   = bucket["types"].get(log_type, 0) + 1
+        if line:
+            if "log_lines" not in bucket:
+                bucket["log_lines"] = []
+            bucket["log_lines"].append(line)
+            if len(bucket["log_lines"]) > CONTEXT_LINES_MAX:
+                bucket["log_lines"] = bucket["log_lines"][-CONTEXT_LINES_MAX:]
 
 
 def load_ip_stats() -> None:
@@ -444,7 +621,7 @@ def save_ip_stats() -> None:
                 del buckets[day]
             if not buckets:
                 del _ip_stats[ip]
-        snapshot = {ip: {"buckets": dict(e["buckets"])} for ip, e in _ip_stats.items()}
+        snapshot = {ip: {"buckets": copy.deepcopy(e["buckets"])} for ip, e in _ip_stats.items()}
 
     tmp_path = IP_STATS_PATH + ".tmp"
     try:
@@ -471,6 +648,179 @@ def ip_stats_saver() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Blocage actif des IPs via nftables
+# ---------------------------------------------------------------------------
+
+_blocked_ips: dict = {}   # { "1.2.3.4": { "blocked_at": "...", "method": "...", "reason": "..." } }
+_blocked_lock = threading.Lock()
+
+
+def _validate_ipv4(ip: str) -> bool:
+    """Retourne True si ip est une adresse IPv4 valide (protection injection shell)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+        return addr.version == 4
+    except ValueError:
+        return False
+
+
+def _nft_setup_monitoria() -> tuple[bool, str]:
+    """
+    Cree la table, le set et la chaine MonitorIA dans nftables si absents.
+    La table 'monitoria' contient un set 'blocklist' et une chaine 'input' hookee
+    en priorite -1 (avant les autres regles) qui drop les IPs du set.
+    """
+    cmds = [
+        ["nft", "add", "table", "inet", NFT_TABLE],
+        ["nft", "add", "set", "inet", NFT_TABLE, NFT_SET,
+         "{ type ipv4_addr ; flags interval ; }"],
+        ["nft", "add", "chain", "inet", NFT_TABLE, "input",
+         "{ type filter hook input priority -1 ; policy accept ; }"],
+        ["nft", "add", "rule", "inet", NFT_TABLE, "input",
+         "ip", "saddr", f"@{NFT_SET}", "counter", "drop"],
+    ]
+    for cmd in cmds:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0 and "File exists" not in r.stderr and "already exists" not in r.stderr:
+            return False, f"nft setup : {r.stderr.strip()}"
+    return True, "Table monitoria configuree avec succes"
+
+
+def _nft_set_exists() -> bool:
+    """Verifie si le set monitoria/blocklist existe dans nftables."""
+    r = subprocess.run(
+        ["nft", "list", "set", "inet", NFT_TABLE, NFT_SET],
+        capture_output=True, text=True
+    )
+    return r.returncode == 0
+
+
+def block_ip(ip: str, reason: str = "manuel") -> tuple[bool, str]:
+    """
+    Bloque une IP via le set nftables 'inet monitoria blocklist'.
+    Cree la table monitoria automatiquement si elle n'existe pas.
+    Retourne (succes, message).
+    """
+    if not _validate_ipv4(ip):
+        return False, f"Adresse IPv4 invalide : {ip}"
+
+    with _blocked_lock:
+        if ip in _blocked_ips:
+            return False, f"IP {ip} deja bloquee"
+
+    # Creer la table monitoria si necessaire
+    if not _nft_set_exists():
+        ok, msg = _nft_setup_monitoria()
+        if not ok:
+            return False, msg
+
+    r = subprocess.run(
+        ["nft", "add", "element", "inet", NFT_TABLE, NFT_SET, "{", ip, "}"],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        return False, f"nft : {r.stderr.strip()}"
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    with _blocked_lock:
+        _blocked_ips[ip] = {"blocked_at": now, "method": "nft", "reason": reason}
+    save_blocked_ips()
+    app.logger.info(f"[INFO] IP bloquee : {ip} (raison : {reason})")
+    return True, f"IP {ip} bloquee avec succes"
+
+
+def unblock_ip(ip: str) -> tuple[bool, str]:
+    """
+    Retire une IP du set nftables et de la liste interne.
+    Retourne (succes, message).
+    """
+    if not _validate_ipv4(ip):
+        return False, f"Adresse IPv4 invalide : {ip}"
+
+    r = subprocess.run(
+        ["nft", "delete", "element", "inet", NFT_TABLE, NFT_SET, "{", ip, "}"],
+        capture_output=True, text=True
+    )
+    # On continue meme si nft echoue (peut etre deja retiree)
+    if r.returncode != 0:
+        app.logger.warning(f"[WARNING] nft delete element {ip} : {r.stderr.strip()}")
+
+    with _blocked_lock:
+        _blocked_ips.pop(ip, None)
+    save_blocked_ips()
+    app.logger.info(f"[INFO] IP debloquee : {ip}")
+    return True, f"IP {ip} debloquee"
+
+
+def load_blocked_ips() -> None:
+    """Charge la liste des IPs bloquees depuis le fichier JSON persistant."""
+    global _blocked_ips
+    try:
+        with open(BLOCKLIST_PATH, "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            _blocked_ips = data
+            app.logger.info(f"[INFO] Blocklist chargee : {len(_blocked_ips)} IP(s) bloquee(s)")
+    except FileNotFoundError:
+        app.logger.info("[INFO] Aucune blocklist existante")
+    except (json.JSONDecodeError, IOError) as exc:
+        app.logger.error(f"[ERROR] Chargement blocklist : {exc}")
+
+
+def save_blocked_ips() -> None:
+    """Persiste la liste des IPs bloquees (ecriture atomique)."""
+    with _blocked_lock:
+        snapshot = dict(_blocked_ips)
+    tmp_path = BLOCKLIST_PATH + ".tmp"
+    try:
+        dirpath = os.path.dirname(BLOCKLIST_PATH)
+        if dirpath:
+            os.makedirs(dirpath, exist_ok=True)
+        with open(tmp_path, "w") as f:
+            json.dump(snapshot, f, indent=2)
+        os.replace(tmp_path, BLOCKLIST_PATH)
+    except IOError as exc:
+        app.logger.error(f"[ERROR] Sauvegarde blocklist : {exc}")
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+def get_nft_ruleset() -> tuple[bool, str]:
+    """Retourne la sortie complete de 'nft list ruleset' (lecture seule)."""
+    r = subprocess.run(
+        ["nft", "list", "ruleset"],
+        capture_output=True, text=True, timeout=5
+    )
+    if r.returncode == 0:
+        return True, r.stdout
+    return False, r.stderr.strip()
+
+
+def nft_verify() -> tuple[bool, str]:
+    """Verifie la configuration nftables via 'nft -c -f /etc/nftables.conf'."""
+    r = subprocess.run(
+        ["nft", "-c", "-f", "/etc/nftables.conf"],
+        capture_output=True, text=True, timeout=5
+    )
+    if r.returncode == 0:
+        return True, "Configuration nftables valide"
+    return False, r.stderr.strip() or "Erreur de verification"
+
+
+def nft_restart() -> tuple[bool, str]:
+    """Redemarre le service nftables via systemctl."""
+    r = subprocess.run(
+        ["systemctl", "restart", "nftables"],
+        capture_output=True, text=True, timeout=10
+    )
+    if r.returncode == 0:
+        return True, "nftables redémarre avec succes"
+    return False, r.stderr.strip() or "Echec redemarrage nftables"
+
+
+# ---------------------------------------------------------------------------
 # Traitement des lignes de log
 # ---------------------------------------------------------------------------
 
@@ -489,10 +839,12 @@ def process_line(line: str, fallback_service: str = None) -> None:
         service = fallback_service
 
     # Suivi des tentatives hostiles par IP
+    # Les IPs en liste blanche et les evenements correspondant a une regle d'exception
+    # (ex: connexions root locales declenchees par des crons) sont exclus du suivi.
     if log_type in _HOSTILE_TYPES:
         ip = extract_ip(line)
-        if ip:
-            record_ip_event(ip, service, log_type)
+        if ip and not is_whitelisted(ip) and not matches_exception_rule(log_type, ip, line):
+            record_ip_event(ip, service, log_type, line)
 
     entry = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
@@ -737,6 +1089,7 @@ def set_config():
 
     email_config.update(data)
     save_config()
+    _compile_whitelist()
     return jsonify({"status": "ok"})
 
 
@@ -745,23 +1098,45 @@ def api_ip_stats() -> Response:
     """
     Retourne les statistiques de tentatives hostiles par IP sur les RETENTION_DAYS derniers jours.
     Triees par nombre de tentatives decroissant, limitees aux 200 premieres.
+    Inclut les lignes de log contextuelles, le taux horaire et l'indicateur 'nouvelle IP'.
     """
+    now = datetime.now(timezone.utc)
     with _ip_lock:
         result = []
         for ip, entry in _ip_stats.items():
             agg = _aggregate_buckets(entry["buckets"])
             if agg:
+                is_new = False
+                if agg["first_seen"]:
+                    try:
+                        age_h = (now - datetime.fromisoformat(agg["first_seen"])).total_seconds() / 3600
+                        is_new = age_h < 24
+                    except Exception:
+                        pass
                 result.append({
-                    "ip":         ip,
-                    "count":      agg["count"],
-                    "first_seen": agg["first_seen"],
-                    "last_seen":  agg["last_seen"],
-                    "services":   agg["services"],
-                    "types":      agg["types"],
-                    "threat":     classify_threat(agg)
+                    "ip":            ip,
+                    "count":         agg["count"],
+                    "first_seen":    agg["first_seen"],
+                    "last_seen":     agg["last_seen"],
+                    "services":      agg["services"],
+                    "types":         agg["types"],
+                    "threat":        classify_threat(agg),
+                    "log_lines":     agg.get("log_lines", []),
+                    "rate_per_hour": agg.get("rate_per_hour", 0.0),
+                    "is_new":        is_new
                 })
     result.sort(key=lambda x: x["count"], reverse=True)
     return jsonify(result[:200])
+
+
+@app.route("/api/alerts")
+def api_alerts() -> Response:
+    """
+    Retourne l'historique des ALERT_LOG_MAXLEN dernieres alertes mail envoyees.
+    Chaque entree contient le timestamp d'envoi, le type, le service, l'IP et la ligne brute.
+    """
+    with _alert_log_lock:
+        return jsonify(list(_alert_log))
 
 
 @app.route("/api/logs/export")
@@ -814,6 +1189,125 @@ def test_email():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/block-ip", methods=["POST"])
+def api_block_ip() -> Response:
+    """
+    Bloque une IP via le set nftables 'inet monitoria blocklist'.
+    Corps JSON attendu : { "ip": "1.2.3.4", "reason": "optionnel" }
+    """
+    data = request.get_json(silent=True)
+    if not data or not data.get("ip"):
+        return jsonify({"error": "Champ 'ip' manquant"}), 400
+    ok, msg = block_ip(data["ip"].strip(), data.get("reason", "manuel via dashboard"))
+    if ok:
+        return jsonify({"status": "ok", "message": msg})
+    return jsonify({"error": msg}), 400
+
+
+@app.route("/api/unblock-ip", methods=["POST"])
+def api_unblock_ip() -> Response:
+    """
+    Retire une IP du blocklist nftables.
+    Corps JSON attendu : { "ip": "1.2.3.4" }
+    """
+    data = request.get_json(silent=True)
+    if not data or not data.get("ip"):
+        return jsonify({"error": "Champ 'ip' manquant"}), 400
+    ok, msg = unblock_ip(data["ip"].strip())
+    if ok:
+        return jsonify({"status": "ok", "message": msg})
+    return jsonify({"error": msg}), 400
+
+
+@app.route("/api/blocked-ips")
+def api_blocked_ips() -> Response:
+    """Retourne la liste des IPs actuellement bloquees par MonitorIA."""
+    with _blocked_lock:
+        result = [
+            {"ip": ip, **info}
+            for ip, info in _blocked_ips.items()
+        ]
+    result.sort(key=lambda x: x.get("blocked_at", ""), reverse=True)
+    return jsonify(result)
+
+
+@app.route("/api/nftables/ruleset")
+def api_nft_ruleset() -> Response:
+    """Retourne la sortie complete de 'nft list ruleset' (lecture seule)."""
+    ok, output = get_nft_ruleset()
+    return jsonify({"ok": ok, "output": output})
+
+
+@app.route("/api/nftables/action", methods=["POST"])
+def api_nft_action() -> Response:
+    """
+    Execute une action nftables.
+    Corps JSON attendu : { "action": "verify"|"restart"|"setup" }
+    """
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Corps JSON invalide"}), 400
+    action = data.get("action", "")
+
+    if action == "verify":
+        ok, msg = nft_verify()
+    elif action == "restart":
+        ok, msg = nft_restart()
+    elif action == "setup":
+        ok, msg = _nft_setup_monitoria()
+    else:
+        return jsonify({"error": f"Action inconnue : {action}"}), 400
+
+    if ok:
+        app.logger.info(f"[INFO] nftables action '{action}' : {msg}")
+        return jsonify({"status": "ok", "message": msg})
+    app.logger.error(f"[ERROR] nftables action '{action}' : {msg}")
+    return jsonify({"error": msg}), 500
+
+
+@app.route("/api/threat-status")
+def api_threat_status() -> Response:
+    """
+    Retourne un resume des menaces actives des 15 dernieres minutes
+    calcule depuis le buffer d'evenements en memoire.
+    """
+    cutoff_dt = datetime.now(timezone.utc).replace(
+        second=0, microsecond=0
+    ) - timedelta(minutes=15)
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    with _buffer_lock:
+        recent = [e for e in _event_buffer if e.get("timestamp", "") >= cutoff_str
+                  and e.get("type") in _HOSTILE_TYPES]
+
+    types: dict = {}
+    active_ips: set = set()
+    for e in recent:
+        types[e["type"]] = types.get(e["type"], 0) + 1
+        ip = extract_ip(e.get("line", ""))
+        if ip:
+            active_ips.add(ip)
+
+    rate = round(len(recent) / 15, 1)  # evenements par minute sur la fenetre
+    threat_level = "calm"
+    if rate > 20:
+        threat_level = "critical"
+    elif rate > 5:
+        threat_level = "high"
+    elif rate > 1:
+        threat_level = "medium"
+    elif recent:
+        threat_level = "low"
+
+    return jsonify({
+        "threat_level":  threat_level,
+        "events_15min":  len(recent),
+        "rate_per_min":  rate,
+        "active_ips":    len(active_ips),
+        "types":         types
+    })
+
+
 # ---------------------------------------------------------------------------
 # Arret propre
 # ---------------------------------------------------------------------------
@@ -826,16 +1320,20 @@ def _handle_shutdown(signum, frame) -> None:
     """
     app.logger.info(f"[INFO] Signal {signum} recu - sauvegarde des stats IP et arret")
     save_ip_stats()
+    save_blocked_ips()
     sys.exit(0)
 
 
 if __name__ == "__main__":
     load_config()
+    _compile_whitelist()
     load_ip_stats()
+    load_blocked_ips()
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT,  _handle_shutdown)
     # atexit en dernier recours (arret hors signal, ex: exception non rattrapee)
     atexit.register(save_ip_stats)
+    atexit.register(save_blocked_ips)
     start_log_watchers()
     app.logger.info("[INFO] MonitorIA demarre sur le port 8080")
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)
