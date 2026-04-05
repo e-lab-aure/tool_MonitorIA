@@ -403,6 +403,34 @@
         /* Badge "NEW" pour les IPs vues pour la premiere fois dans les 24h */
         .ip-badge.new { background:#001a00; color:#44ff44; border:1px solid #115511; }
 
+        /* Badges types d'evenements additionnels */
+        .ip-badge.web_scan            { background:#1a0030; color:#cc55ff; border:1px solid #551188; }
+        .ip-badge.privilege_escalation { background:#300020; color:#ff44aa; border:1px solid #881144; }
+        .ip-badge.recid               { background:#1a1400; color:#ffcc00; border:1px solid #554400; }
+
+        /* Sparkline 24h */
+        .ip-sparkline {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 1px;
+            height: 14px;
+            vertical-align: bottom;
+            margin-left: 8px;
+        }
+        .ip-sparkline-bar {
+            width: 3px;
+            background: #2a2a2a;
+            flex-shrink: 0;
+            border-radius: 1px 1px 0 0;
+        }
+
+        /* Badge geo / abuse */
+        .ip-geo   { font-size: 9px; color: #336688; }
+        .ip-abuse { font-size: 9px; font-weight: bold; }
+        .ip-abuse.low  { color: #557733; }
+        .ip-abuse.med  { color: #aa7722; }
+        .ip-abuse.high { color: #cc2222; }
+
         /* Lignes de log contextuelles (clic sur une IP) */
         .ip-log-lines {
             margin-top: 5px;
@@ -765,6 +793,8 @@
         <button class="filter-btn" data-filter="WireGuard">WIREGUARD</button>
         <button class="filter-btn" data-filter="fail2ban">FAIL2BAN</button>
         <button class="filter-btn" data-filter="nftables">NFTABLES</button>
+        <button class="filter-btn" data-filter="HTTP">HTTP</button>
+        <button class="filter-btn" data-filter="system">SUDO</button>
         <input type="text" class="search-input" id="search-input" placeholder="RECHERCHER...  [ / ]">
     </div>
 
@@ -1120,7 +1150,8 @@
     function appendLog(entry) {
         // Compteurs independants des filtres actifs
         state.counts.total++;
-        if (entry.type === 'failure' || entry.type === 'wireguard_failure') state.counts.failure++;
+        if (['failure', 'wireguard_failure', 'web_scan', 'privilege_escalation'].includes(entry.type))
+            state.counts.failure++;
         else if (entry.type === 'success' || entry.type === 'wireguard_success') state.counts.success++;
         else if (entry.type === 'ban' || entry.type === 'unban') state.counts.ban++;
         refreshCounts();
@@ -1154,7 +1185,7 @@
         row.style.display = matchesFilters(row) ? 'flex' : 'none';
 
         // Suivi des evenements hostiles pour l'indicateur de menace
-        if (['failure', 'wireguard_failure', 'ban', 'nftables'].includes(entry.type)) {
+        if (['failure', 'wireguard_failure', 'ban', 'nftables', 'web_scan', 'privilege_escalation'].includes(entry.type)) {
             recentHostile.push({ ts: Date.now(), type: entry.type });
             updateThreatIndicator();
         }
@@ -1327,6 +1358,13 @@
                 newBadge.textContent = 'NEW';
                 top.appendChild(newBadge);
             }
+            if (d.is_recidivist) {
+                const recidBadge = document.createElement('span');
+                recidBadge.className   = 'ip-badge recid';
+                recidBadge.textContent = 'RECID';
+                recidBadge.title       = 'IP active sur plusieurs jours';
+                top.appendChild(recidBadge);
+            }
 
             // Badge de menace
             const badge = document.createElement('span');
@@ -1334,10 +1372,15 @@
             badge.textContent = THREAT_LABEL[d.threat] || d.threat.toUpperCase();
             top.appendChild(badge);
 
-            // Adresse IP
+            // Adresse IP avec localisation
             const addr = document.createElement('span');
-            addr.className   = 'ip-addr';
-            addr.textContent = d.ip;
+            addr.className = 'ip-addr';
+            if (d.geo && d.geo.country_code) {
+                addr.textContent = d.ip + '  ' + d.geo.country_code
+                    + (d.geo.city ? ' ' + d.geo.city : '');
+            } else {
+                addr.textContent = d.ip;
+            }
             top.appendChild(addr);
 
             // Compteur
@@ -1375,6 +1418,32 @@
                 const rateSpan = document.createElement('span');
                 rateSpan.textContent = d.rate_per_hour + '/h';
                 meta.appendChild(rateSpan);
+            }
+
+            // Score AbuseIPDB
+            if (d.abuse_score !== null && d.abuse_score !== undefined) {
+                const abuseSpan = document.createElement('span');
+                abuseSpan.className = 'ip-abuse'
+                    + (d.abuse_score >= 75 ? ' high' : d.abuse_score >= 25 ? ' med' : ' low');
+                abuseSpan.textContent = 'abuse:' + d.abuse_score + '%';
+                abuseSpan.title       = 'Score AbuseIPDB (0-100)';
+                meta.appendChild(abuseSpan);
+            }
+
+            // Sparkline 24h
+            if (d.hour_distribution && d.hour_distribution.some(v => v > 0)) {
+                const spark = document.createElement('span');
+                spark.className = 'ip-sparkline';
+                spark.title     = 'Distribution sur 24h (0h-23h)';
+                const maxH = Math.max(1, ...d.hour_distribution);
+                d.hour_distribution.forEach(v => {
+                    const bar = document.createElement('span');
+                    bar.className         = 'ip-sparkline-bar';
+                    bar.style.height      = Math.round(v / maxH * 14) + 'px';
+                    bar.style.background  = v > 0 ? '#2a4a2a' : '#1a1a1a';
+                    spark.appendChild(bar);
+                });
+                meta.appendChild(spark);
             }
 
             // Bouton BLOQUER / BLOQUE
@@ -2371,8 +2440,18 @@
         const srcs  = Object.entries(srcMap).sort((a, b) => b[1].total - a[1].total);
         const ports = Object.entries(portMap).sort((a, b) => b[1].total - a[1].total);
 
-        const COLORS = {brute_force: '#ff3333', scan: '#ff8833', probe: '#ccaa00'};
         const THREAT_SHORT = {brute_force: 'BRUTE', scan: 'SCAN', probe: 'PRB'};
+
+        // Palette de couleurs vives par IP (evite les doublons jusqu'a 16 IPs)
+        const IP_PALETTE = [
+            '#ff4444', '#ff8833', '#ffcc00', '#44ff88', '#33ccff',
+            '#aa55ff', '#ff44cc', '#00ffcc', '#ff6655', '#88ff33',
+            '#ff9900', '#55bbff', '#ee44ff', '#aaffaa', '#ff5577', '#ffaa55'
+        ];
+        const ipColorMap = {};
+        srcs.forEach(([ip], idx) => {
+            ipColorMap[ip] = IP_PALETTE[idx % IP_PALETTE.length];
+        });
 
         // Layout
         const MARGIN   = 44;
@@ -2457,7 +2536,7 @@
             const spread = Math.min(60, (ports.length - 1) * 12);
             const ey = SRV_CY + (pi - (ports.length - 1) / 2) * (ports.length > 1 ? spread / (ports.length - 1) : 0);
 
-            const color = COLORS[f.threat_level] || '#555';
+            const color = ipColorMap[f.source_ip] || '#555';
             const alpha = (0.1 + 0.45 * (f.count / maxCount)).toFixed(2);
             const sw    = (0.5 + 3 * (f.count / maxCount)).toFixed(1);
 
@@ -2518,10 +2597,10 @@
             }
         });
 
-        // Noeuds sources (IPs attaquantes)
+        // Noeuds sources (IPs attaquantes) - couleur unique par IP
         srcs.forEach(([ip, info], i) => {
             const y     = yPos(i, srcs.length, H);
-            const color = COLORS[info.threat] || '#555';
+            const color = ipColorMap[ip] || '#555';
             const isScan = scans.some(s => s.ip === ip);
 
             // Anneau externe (scan = double anneau)
@@ -2586,21 +2665,17 @@
             svg.appendChild(cntT);
         });
 
-        // Legende bas-centre
-        const LEGEND = [
-            {l: 'BRUTE FORCE', c: '#ff3333'},
-            {l: 'SCAN',        c: '#ff8833'},
-            {l: 'PROBE',       c: '#ccaa00'}
-        ];
-        LEGEND.forEach((leg, li) => {
-            const lx = SRV_CX - 80 + li * 65;
+        // Legende bas-centre : couleur unique par IP source
+        srcs.slice(0, 8).forEach(([ip], li) => {
+            const lx = 12 + li * Math.min(130, (W - 24) / Math.min(srcs.length, 8));
             const ly = H - 8;
-            svg.appendChild(el('circle', {cx: lx, cy: ly - 2, r:'3', fill: leg.c}));
+            const lc = ipColorMap[ip] || '#555';
+            svg.appendChild(el('circle', {cx: lx, cy: ly - 2, r:'3', fill: lc}));
             const lt = document.createElementNS(NS, 'text');
             lt.setAttribute('x', lx + 7); lt.setAttribute('y', ly + 1);
-            lt.setAttribute('fill', '#2a2a2a');
+            lt.setAttribute('fill', lc); lt.setAttribute('fill-opacity', '0.55');
             lt.setAttribute('font-size', '8'); lt.setAttribute('font-family', 'Courier New');
-            lt.textContent = leg.l;
+            lt.textContent = ip;
             svg.appendChild(lt);
         });
     }

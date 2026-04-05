@@ -18,6 +18,9 @@ import sys
 import threading
 import subprocess
 import time
+import urllib.request
+import urllib.error
+import urllib.parse
 import logging
 from collections import deque
 from datetime import datetime, timezone, timedelta
@@ -63,6 +66,15 @@ EVENT_BUFFER_MAXLEN = 1000
 
 # Nombre de lignes de log brutes conservees par IP pour le contexte des attaques
 CONTEXT_LINES_MAX = 10
+
+# Base de donnees GeoIP locale (GeoLite2-City, optionnelle)
+# Telecharger sur https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+GEOIP_DB_PATH = os.environ.get("GEOIP_DB_PATH", "/app/config/GeoLite2-City.mmdb")
+
+# Cle API AbuseIPDB pour le score de reputation des IPs (optionnelle)
+# Plan gratuit : 1000 requetes/jour - https://www.abuseipdb.com/api
+ABUSEIPDB_API_KEY   = os.environ.get("ABUSEIPDB_API_KEY", "")
+ABUSEIPDB_CACHE_TTL = 3600  # secondes entre deux lookups de la meme IP
 
 # Port UDP WireGuard (51820 par defaut, surchargeable via variable d'environnement)
 WG_PORT = re.escape(os.environ.get("WG_PORT", "51820"))
@@ -111,6 +123,87 @@ _whitelist_cidrs:    list = []
 _whitelist_ips:      set  = set()
 _whitelist_patterns: list = []
 _whitelist_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# GeoIP : localisation des IPs sources (optionnelle)
+# ---------------------------------------------------------------------------
+
+_geoip_reader = None
+_geoip_lock   = threading.Lock()
+
+
+def _init_geoip() -> None:
+    """Charge le lecteur GeoLite2 si la base de donnees est disponible."""
+    global _geoip_reader
+    if not os.path.isfile(GEOIP_DB_PATH):
+        app.logger.info("[INFO] GeoIP : base de donnees absente, geolocalisation desactivee")
+        return
+    try:
+        import geoip2.database
+        _geoip_reader = geoip2.database.Reader(GEOIP_DB_PATH)
+        app.logger.info(f"[INFO] GeoIP : base chargee depuis {GEOIP_DB_PATH}")
+    except Exception as exc:
+        app.logger.warning(f"[WARNING] GeoIP : chargement echoue : {exc}")
+
+
+def lookup_geo(ip: str) -> dict:
+    """
+    Retourne le pays et la ville associes a une IP (best-effort, jamais bloquant).
+    Retourne {} si GeoIP n'est pas configure ou si l'IP n'est pas dans la base.
+    """
+    with _geoip_lock:
+        reader = _geoip_reader
+    if reader is None:
+        return {}
+    try:
+        resp = reader.city(ip)
+        return {
+            "country_code": resp.country.iso_code or "",
+            "country_name": resp.country.name or "",
+            "city":         resp.city.name or ""
+        }
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# AbuseIPDB : score de reputation des IPs (optionnel)
+# ---------------------------------------------------------------------------
+
+_abuse_cache: dict = {}   # { ip: { "score": int, "fetched_at": float } }
+_abuse_lock  = threading.Lock()
+
+
+def lookup_abuseipdb(ip: str) -> None:
+    """
+    Interroge l'API AbuseIPDB en arriere-plan pour obtenir le score de reputation.
+    Stocke le resultat dans _abuse_cache. Ne leve jamais d'exception.
+    Ne fait rien si la cle API n'est pas configuree ou si le cache est recent.
+    """
+    if not ABUSEIPDB_API_KEY:
+        return
+    now_ts = time.time()
+    with _abuse_lock:
+        cached = _abuse_cache.get(ip)
+        if cached and now_ts - cached["fetched_at"] < ABUSEIPDB_CACHE_TTL:
+            return
+    try:
+        url = (
+            "https://api.abuseipdb.com/api/v2/check"
+            f"?ipAddress={urllib.parse.quote(ip)}&maxAgeInDays=90"
+        )
+        req = urllib.request.Request(url, headers={
+            "Key":    ABUSEIPDB_API_KEY,
+            "Accept": "application/json"
+        })
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        score = data.get("data", {}).get("abuseConfidenceScore", 0)
+        with _abuse_lock:
+            _abuse_cache[ip] = {"score": int(score), "fetched_at": time.time()}
+    except Exception as exc:
+        app.logger.debug(f"[DEBUG] AbuseIPDB lookup {ip} : {exc}")
+
 
 # ---------------------------------------------------------------------------
 # Patterns de classification des logs
@@ -210,6 +303,29 @@ LOG_PATTERNS = [
         "regex": re.compile(r"(nft\s|nftables|IN=\S+\s+OUT=)", re.IGNORECASE),
         "type": "nftables",
         "service": "nftables"
+    },
+    {
+        # Tentatives HTTP suspectes : scanners, traversal, injections, exploits connus.
+        "id": "web_scan",
+        "regex": re.compile(
+            r'(GET|POST|HEAD)\s+.*(\.php|\.asp|\.env|/admin|/wp-|/cgi-bin|'
+            r'select\s+\*|union\s+select|/etc/passwd|\.\./|<script|eval\()',
+            re.IGNORECASE
+        ),
+        "type": "web_scan",
+        "service": "HTTP"
+    },
+    {
+        # Escalade de privileges : sudo, su, utilisation de SUID connus.
+        "id": "privilege_escalation",
+        "regex": re.compile(
+            r"(sudo.*authentication failure|sudo.*command not allowed|"
+            r"su\[.*\]: FAILED|PAM.*account.*locked|"
+            r"pam_unix.*su.*auth failed)",
+            re.IGNORECASE
+        ),
+        "type": "privilege_escalation",
+        "service": "system"
     }
 ]
 
@@ -450,14 +566,19 @@ _ip_lock = threading.Lock()
 _ip_stats: dict = {}
 
 # Types d'evenements consideres comme hostiles pour le suivi IP
-_HOSTILE_TYPES = frozenset({"failure", "wireguard_failure", "ban", "nftables"})
+_HOSTILE_TYPES = frozenset({
+    "failure", "wireguard_failure", "ban", "nftables",
+    "web_scan", "privilege_escalation"
+})
 
 # Patterns d'extraction de l'IP source selon le format de la ligne.
-# Ordre de priorite decroissante : "from X port" > "from X:port" > SRC=X > Ban/Unban X
+# Ordre de priorite decroissante : "from X port" > "from X:port" > SRC=X > Ban/Unban X > IPv6
 _RE_IP_FROM_PORT = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})\s+port\b', re.IGNORECASE)
 _RE_IP_FROM      = re.compile(r'\bfrom\s+(\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?\b', re.IGNORECASE)
 _RE_IP_SRC       = re.compile(r'\bSRC=(\d{1,3}(?:\.\d{1,3}){3})\b')
 _RE_IP_BAN       = re.compile(r'\b(?:Ban|Unban)\s+(\d{1,3}(?:\.\d{1,3}){3})\b', re.IGNORECASE)
+# IPv6 : extrait l'adresse apres "from" (ex: "from ::ffff:1.2.3.4" ou "from 2001:db8::1")
+_RE_IP_FROM_V6   = re.compile(r'\bfrom\s+([0-9a-fA-F:]{2,39}(?::(?:\d{1,3}\.){3}\d{1,3})?)\b', re.IGNORECASE)
 
 # Patterns d'extraction du port de destination
 _RE_PORT_DPT  = re.compile(r'\bDPT=(\d+)\b')
@@ -481,13 +602,23 @@ _RE_NFT_NAME        = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 def extract_ip(line: str) -> str | None:
     """
-    Extrait l'adresse IP source d'une ligne de log.
+    Extrait l'adresse IP source d'une ligne de log (IPv4 et IPv6).
     Essaie plusieurs patterns dans l'ordre de specificite decroissante.
+    Pour IPv6, valide le resultat via ipaddress pour eviter les faux positifs.
     """
     for pattern in (_RE_IP_FROM_PORT, _RE_IP_FROM, _RE_IP_SRC, _RE_IP_BAN):
         m = pattern.search(line)
         if m:
             return m.group(1)
+    # Tentative IPv6
+    m = _RE_IP_FROM_V6.search(line)
+    if m:
+        candidate = m.group(1)
+        try:
+            ipaddress.ip_address(candidate)
+            return candidate
+        except ValueError:
+            pass
     return None
 
 
@@ -510,10 +641,12 @@ def extract_port(line: str, service: str | None = None) -> int | None:
 # Poids par type d'evenement pour le calcul du score de menace.
 # Un ban fail2ban (confirmation externe) pese 3x une tentative brute.
 THREAT_WEIGHTS = {
-    "failure":           1.0,
-    "wireguard_failure": 0.8,
-    "ban":               3.0,
-    "nftables":          0.5,
+    "failure":               1.0,
+    "wireguard_failure":     0.8,
+    "ban":                   3.0,
+    "nftables":              0.5,
+    "web_scan":              1.5,
+    "privilege_escalation":  2.5,
 }
 
 
@@ -543,19 +676,23 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
     Un bucket est actif si sa date est dans la fenetre de retention.
     Doit etre appele sous _ip_lock (pas de verrou interne).
     Retourne None si aucun evenement actif n'existe.
-    Inclut les dernieres lignes de log brutes (contexte des attaques) et le taux horaire.
+    Inclut les dernieres lignes de log brutes, le taux horaire, la distribution
+    par heure (24 slots) et l'indicateur recidiviste (>= 2 jours d'activite).
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
-    total_count = 0
+    total_count  = 0
+    active_days  = 0
     first_seen: str | None = None
     last_seen:  str | None = None
-    services: dict = {}
-    types:    dict = {}
+    services:  dict = {}
+    types:     dict = {}
+    hours:     dict = {}   # { "0": N, "1": N, ..., "23": N }
     log_lines: list = []
 
     for day, bucket in buckets.items():
         if day < cutoff:
             continue
+        active_days += 1
         total_count += bucket["count"]
         if first_seen is None or bucket["first_seen"] < first_seen:
             first_seen = bucket["first_seen"]
@@ -565,6 +702,8 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
             services[svc] = services.get(svc, 0) + n
         for t, n in bucket["types"].items():
             types[t] = types.get(t, 0) + n
+        for h, n in bucket.get("hours", {}).items():
+            hours[h] = hours.get(h, 0) + n
         log_lines.extend(bucket.get("log_lines", []))
 
     if total_count == 0:
@@ -572,6 +711,9 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
 
     # Garder uniquement les CONTEXT_LINES_MAX dernieres lignes
     log_lines = log_lines[-CONTEXT_LINES_MAX:]
+
+    # Distribution 24h : liste ordonnee [0..23] pour le sparkline JS
+    hour_distribution = [hours.get(str(h), 0) for h in range(24)]
 
     # Calcul du taux d'evenements par heure sur la plage observee
     rate_per_hour = 0.0
@@ -585,13 +727,15 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
         pass
 
     return {
-        "count":         total_count,
-        "first_seen":    first_seen,
-        "last_seen":     last_seen,
-        "services":      services,
-        "types":         types,
-        "log_lines":     log_lines,
-        "rate_per_hour": rate_per_hour
+        "count":             total_count,
+        "first_seen":        first_seen,
+        "last_seen":         last_seen,
+        "services":          services,
+        "types":             types,
+        "log_lines":         log_lines,
+        "rate_per_hour":     rate_per_hour,
+        "hour_distribution": hour_distribution,
+        "is_recidivist":     active_days >= 2
     }
 
 
@@ -600,12 +744,17 @@ def record_ip_event(ip: str, service: str, log_type: str, line: str = "") -> Non
     Enregistre une tentative hostile associee a une IP dans le bucket du jour.
     Cree le bucket du jour s'il n'existe pas encore.
     Stocke les dernieres lignes de log brutes pour le contexte des attaques.
+    Suit la distribution horaire des evenements (cle = heure UTC sous forme "HH").
+    Declenche un lookup AbuseIPDB en arriere-plan pour les nouvelles IPs.
     """
     now     = datetime.now(timezone.utc)
     today   = now.date().isoformat()
     now_iso = now.isoformat(timespec="seconds")
+    hour_key = str(now.hour)
+
     with _ip_lock:
-        if ip not in _ip_stats:
+        is_new_ip = ip not in _ip_stats
+        if is_new_ip:
             _ip_stats[ip] = {"buckets": {}}
         buckets = _ip_stats[ip]["buckets"]
         if today not in buckets:
@@ -615,17 +764,23 @@ def record_ip_event(ip: str, service: str, log_type: str, line: str = "") -> Non
                 "last_seen":  now_iso,
                 "services":   {},
                 "types":      {},
-                "log_lines":  []
+                "log_lines":  [],
+                "hours":      {}
             }
         bucket = buckets[today]
         bucket["count"] += 1
         bucket["last_seen"] = now_iso
         bucket["services"][service] = bucket["services"].get(service, 0) + 1
         bucket["types"][log_type]   = bucket["types"].get(log_type, 0) + 1
+        bucket["hours"][hour_key]   = bucket["hours"].get(hour_key, 0) + 1
         if line:
             bucket["log_lines"].append(line)
             if len(bucket["log_lines"]) > CONTEXT_LINES_MAX:
                 bucket["log_lines"] = bucket["log_lines"][-CONTEXT_LINES_MAX:]
+
+    # Lancer le lookup AbuseIPDB en arriere-plan (ne bloque pas)
+    if is_new_ip and ABUSEIPDB_API_KEY:
+        threading.Thread(target=lookup_abuseipdb, args=(ip,), daemon=True).start()
 
 
 def load_ip_stats() -> None:
@@ -1073,10 +1228,15 @@ def start_log_watchers() -> None:
     threading.Thread(target=ip_stats_saver, daemon=True).start()
 
     log_files = [
-        ("/var/log/fail2ban.log", "fail2ban"),
-        ("/var/log/auth.log",     "SSH"),
-        ("/var/log/secure",       "SSH"),
-        ("/var/log/kern.log",     "nftables"),
+        ("/var/log/fail2ban.log",           "fail2ban"),
+        ("/var/log/auth.log",               "SSH"),
+        ("/var/log/secure",                 "SSH"),
+        ("/var/log/kern.log",               "nftables"),
+        ("/var/log/nginx/access.log",       "HTTP"),
+        ("/var/log/nginx/error.log",        "HTTP"),
+        ("/var/log/apache2/access.log",     "HTTP"),
+        ("/var/log/apache2/error.log",      "HTTP"),
+        ("/var/log/httpd/access_log",       "HTTP"),
     ]
     for filepath, service in log_files:
         if os.path.exists(filepath):
@@ -1230,33 +1390,53 @@ def api_ip_stats() -> Response:
     """
     Retourne les statistiques de tentatives hostiles par IP sur les RETENTION_DAYS derniers jours.
     Triees par nombre de tentatives decroissant, limitees aux 200 premieres.
-    Inclut les lignes de log contextuelles, le taux horaire et l'indicateur 'nouvelle IP'.
+    Inclut : lignes de log, taux horaire, geolocalisation, score AbuseIPDB,
+    indicateur 'nouvelle IP', indicateur 'recidiviste' et distribution 24h.
     """
     now = datetime.now(timezone.utc)
     with _ip_lock:
-        result = []
-        for ip, entry in _ip_stats.items():
+        snapshot = list(_ip_stats.items())
+
+    result = []
+    for ip, entry in snapshot:
+        with _ip_lock:
             agg = _aggregate_buckets(entry["buckets"])
-            if agg:
-                is_new = False
-                if agg["first_seen"]:
-                    try:
-                        age_h = (now - datetime.fromisoformat(agg["first_seen"])).total_seconds() / 3600
-                        is_new = age_h < 24
-                    except Exception:
-                        pass
-                result.append({
-                    "ip":            ip,
-                    "count":         agg["count"],
-                    "first_seen":    agg["first_seen"],
-                    "last_seen":     agg["last_seen"],
-                    "services":      agg["services"],
-                    "types":         agg["types"],
-                    "threat":        classify_threat(agg),
-                    "log_lines":     agg.get("log_lines", []),
-                    "rate_per_hour": agg.get("rate_per_hour", 0.0),
-                    "is_new":        is_new
-                })
+        if not agg:
+            continue
+
+        is_new = False
+        if agg["first_seen"]:
+            try:
+                age_h = (now - datetime.fromisoformat(agg["first_seen"])).total_seconds() / 3600
+                is_new = age_h < 24
+            except Exception:
+                pass
+
+        # Geolocalisation (cache en memoire dans le reader GeoIP)
+        geo = lookup_geo(ip)
+
+        # Score AbuseIPDB depuis le cache local (pas de requete bloquante ici)
+        with _abuse_lock:
+            abuse_entry = _abuse_cache.get(ip)
+        abuse_score = abuse_entry["score"] if abuse_entry else None
+
+        result.append({
+            "ip":               ip,
+            "count":            agg["count"],
+            "first_seen":       agg["first_seen"],
+            "last_seen":        agg["last_seen"],
+            "services":         agg["services"],
+            "types":            agg["types"],
+            "threat":           classify_threat(agg),
+            "log_lines":        agg.get("log_lines", []),
+            "rate_per_hour":    agg.get("rate_per_hour", 0.0),
+            "hour_distribution": agg.get("hour_distribution", [0] * 24),
+            "is_new":           is_new,
+            "is_recidivist":    agg.get("is_recidivist", False),
+            "geo":              geo,
+            "abuse_score":      abuse_score
+        })
+
     result.sort(key=lambda x: x["count"], reverse=True)
     return jsonify(result[:200])
 
@@ -1503,6 +1683,58 @@ def api_nft_add_rule() -> Response:
         app.logger.info(f"[INFO] Regle ajoutee : {' '.join(cmd)}")
         return jsonify({"status": "ok", "message": "Regle ajoutee avec succes"})
     return jsonify({"error": r.stderr.strip()}), 500
+
+
+@app.route("/api/report/daily")
+def api_report_daily() -> Response:
+    """
+    Rapport quotidien des menaces : top IPs, types d'evenements et services cibles
+    sur les dernieres 24 heures depuis le buffer d'evenements et les stats IP.
+    """
+    now    = datetime.now(timezone.utc)
+    since  = now - timedelta(hours=24)
+    since_str = since.strftime("%Y-%m-%d %H:%M:%S")
+
+    with _buffer_lock:
+        events_24h = [e for e in _event_buffer if e.get("timestamp", "") >= since_str]
+
+    # Compteurs globaux
+    total_events  = len(events_24h)
+    hostile_events = [e for e in events_24h if e.get("type") in _HOSTILE_TYPES]
+    types_count:    dict = {}
+    services_count: dict = {}
+    ips_count:      dict = {}
+
+    for e in hostile_events:
+        t = e.get("type", "")
+        s = e.get("service", "")
+        types_count[t]    = types_count.get(t, 0) + 1
+        services_count[s] = services_count.get(s, 0) + 1
+        ip = extract_ip(e.get("line", ""))
+        if ip:
+            ips_count[ip] = ips_count.get(ip, 0) + 1
+
+    top_ips = sorted(
+        [{"ip": ip, "count": n} for ip, n in ips_count.items()],
+        key=lambda x: x["count"], reverse=True
+    )[:20]
+
+    # Enrichir avec geo et abuse depuis le cache
+    for entry in top_ips:
+        entry["geo"] = lookup_geo(entry["ip"])
+        with _abuse_lock:
+            abuse = _abuse_cache.get(entry["ip"])
+        entry["abuse_score"] = abuse["score"] if abuse else None
+
+    return jsonify({
+        "generated_at":    now.strftime("%Y-%m-%d %H:%M:%S"),
+        "period_hours":    24,
+        "total_events":    total_events,
+        "hostile_events":  len(hostile_events),
+        "types":           types_count,
+        "services":        services_count,
+        "top_ips":         top_ips
+    })
 
 
 @app.route("/api/flux")
@@ -1893,11 +2125,33 @@ def compute_flux() -> dict:
         key = t.strftime("%H:%M")
         timeline.append({"minute": key, "count": timeline_buckets.get(key, 0)})
 
+    # Attaques coordonnees : plusieurs IPs distinctes ciblant le meme port
+    # dans la meme fenetre de 60 min (>= 3 IPs = attaque distribuee).
+    port_to_ips: dict[int, set] = {}
+    for f in flow_list:
+        p = f.get("target_port")
+        if p:
+            port_to_ips.setdefault(p, set()).add(f["source_ip"])
+    coordinated_attacks = [
+        {
+            "port":     port,
+            "service":  next(
+                (f["target_service"] for f in flow_list if f.get("target_port") == port), ""
+            ),
+            "ip_count": len(ips),
+            "ips":      sorted(ips)[:20]
+        }
+        for port, ips in port_to_ips.items()
+        if len(ips) >= 3
+    ]
+    coordinated_attacks.sort(key=lambda x: x["ip_count"], reverse=True)
+
     return {
-        "flows":        flow_list[:100],
-        "timeline":     timeline,
-        "port_heatmap": heatmap[:15],
-        "active_scans": active_scans
+        "flows":               flow_list[:100],
+        "timeline":            timeline,
+        "port_heatmap":        heatmap[:15],
+        "active_scans":        active_scans,
+        "coordinated_attacks": coordinated_attacks[:10]
     }
 
 
@@ -1920,6 +2174,7 @@ def _handle_shutdown(signum, frame) -> None:
 if __name__ == "__main__":
     load_config()
     _compile_whitelist()
+    _init_geoip()
     load_ip_stats()
     load_blocked_ips()
     signal.signal(signal.SIGTERM, _handle_shutdown)
