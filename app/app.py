@@ -1915,13 +1915,14 @@ def api_diagnostics() -> Response:
         # Conteneur rootless : nft inaccessible, fallback lecture fichier
         ok_conf, _ = _read_nft_conf_file()
         if ok_conf:
-            chk("nftables:monitoria_set", "warn",
-                f"nft absent (conteneur rootless) - config lisible depuis {NFT_CONF_PATH} "
-                f"(monter avec -v /etc/nftables.conf:{NFT_CONF_PATH}:ro)")
+            size_kb = round(os.path.getsize(NFT_CONF_PATH) / 1024, 1)
+            chk("nftables:config", "ok",
+                f"config lisible depuis {NFT_CONF_PATH} ({size_kb} KB) - "
+                f"nft absent (rootless), lecture seule")
         else:
-            chk("nftables:monitoria_set", "warn",
-                f"nft absent (conteneur rootless) - monter le fichier hote avec "
-                f"-v /etc/nftables.conf:{NFT_CONF_PATH}:ro pour voir la config")
+            chk("nftables:config", "warn",
+                f"nft absent et {NFT_CONF_PATH} introuvable - "
+                f"copier /etc/nftables.conf dans /opt/tool_MonitorIA/config/")
     else:
         try:
             if _nft_set_exists():
