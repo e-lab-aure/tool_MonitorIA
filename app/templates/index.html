@@ -668,6 +668,70 @@
         .block-msg.ok  { color: #33aa33; }
         .block-msg.err { color: #cc3333; }
 
+        /* ===== OVERLAY PLEIN ECRAN FLUX ===== */
+        .flux-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #060606;
+            z-index: 40;
+            flex-direction: column;
+        }
+        .flux-overlay.open { display: flex; }
+
+        .flux-ov-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 8px 16px;
+            border-bottom: 1px solid #141414;
+            background: #080808;
+            flex-shrink: 0;
+        }
+        .flux-ov-title { font-size: 13px; letter-spacing: 3px; font-weight: bold; color: #cc2222; }
+        .flux-ov-title span { color: #333; }
+        .flux-ov-summary { font-size: 10px; color: #333; letter-spacing: 1px; }
+
+        .flux-ov-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        .flux-diagram {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            min-height: 0;
+        }
+        #flux-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .flux-ov-bottom {
+            display: flex;
+            border-top: 1px solid #111;
+            flex-shrink: 0;
+            height: 108px;
+            background: #070707;
+        }
+        .flux-ov-timeline-wrap {
+            flex: 1;
+            padding: 5px 14px 4px;
+            border-right: 1px solid #111;
+            overflow: hidden;
+        }
+        .flux-ov-heatmap-wrap {
+            width: 380px;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+
         /* Ligne de l'IP bloquee */
         .blocked-row {
             padding: 5px 12px;
@@ -814,31 +878,35 @@
         <div id="nft-list-rules" class="nft-ruleset" style="display:none"></div>
     </div>
 
-    <!-- Panneau flux de trafic hostile (toggle) -->
-    <div id="flux-panel" class="ip-panel" style="width:420px;">
-        <div class="ip-panel-header">
-            <span class="ip-panel-title">TRAFIC HOSTILE</span>
-            <button class="btn" id="btn-flux-refresh" title="Actualiser">REFRESH</button>
-        </div>
-        <div class="ip-panel-summary" id="flux-summary">-</div>
-        <div style="flex:1; overflow-y:auto; display:flex; flex-direction:column;">
-            <!-- Scans actifs -->
-            <div id="flux-scans"></div>
-            <!-- Heatmap des ports -->
-            <div class="flux-section-title">PORTS CIBLES</div>
-            <div id="flux-heatmap"></div>
-            <!-- Timeline 60 minutes -->
-            <div class="timeline-section">
-                <div class="timeline-title">ACTIVITE SUR 60 MINUTES  (clic = filtrer)</div>
-                <div class="timeline-bars" id="timeline-bars"></div>
-                <div class="timeline-labels" id="timeline-labels"></div>
-            </div>
-            <!-- Flux par IP -->
-            <div class="flux-section-title">FLUX PAR IP</div>
-            <div id="flux-flows" class="ip-list" style="flex:1;"></div>
+
+</div>
+
+<!-- Overlay plein ecran : visualisation des flux de trafic hostile -->
+<div id="flux-overlay" class="flux-overlay">
+    <div class="flux-ov-header">
+        <div class="flux-ov-title">FLUX<span> HOSTILE</span></div>
+        <span id="flux-ov-summary" class="flux-ov-summary">-</span>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+            <button class="btn" id="btn-flux-refresh">REFRESH</button>
+            <button class="btn" id="btn-flux-close">FERMER</button>
         </div>
     </div>
-
+    <div class="flux-ov-body">
+        <div id="flux-diagram" class="flux-diagram">
+            <svg id="flux-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div class="flux-ov-bottom">
+            <div class="flux-ov-timeline-wrap">
+                <div class="flux-section-title" style="padding:0 0 4px;">ACTIVITE 60 MIN <span style="color:#111;font-size:8px;">(clic = filtrer)</span></div>
+                <div class="timeline-bars" id="timeline-bars" style="height:38px;"></div>
+                <div class="timeline-labels" id="timeline-labels"></div>
+            </div>
+            <div class="flux-ov-heatmap-wrap">
+                <div class="flux-section-title">PORTS CIBLES</div>
+                <div id="flux-heatmap"></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Modal configuration email -->
@@ -2122,16 +2190,16 @@
     }
 
     // ---------------------------------------------------------------------------
-    // Panneau FLUX trafic hostile
+    // Overlay plein ecran FLUX trafic hostile
     // ---------------------------------------------------------------------------
-    const fluxPanel        = document.getElementById('flux-panel');
+    const fluxOverlay      = document.getElementById('flux-overlay');
     const btnFlux          = document.getElementById('btn-flux');
-    const btnFluxRefresh   = document.getElementById('btn-flux-refresh');
     let   fluxRefreshInterval = null;
-    let   timelineSelected    = null;  // minute selectionnee pour filtre logs
+    let   timelineSelected    = null;
 
     function _closeAllPanels() {
-        [ipPanel, nftPanel, fluxPanel].forEach(p => p.classList.remove('open'));
+        [ipPanel, nftPanel].forEach(p => p.classList.remove('open'));
+        fluxOverlay.classList.remove('open');
         [btnIps, btnNft, btnFlux].forEach(b => b.classList.remove('alert-active'));
         [ipRefreshInterval, alertRefreshInterval, nftRefreshInterval, fluxRefreshInterval]
             .forEach(id => clearInterval(id));
@@ -2139,67 +2207,36 @@
     }
 
     btnFlux.addEventListener('click', () => {
-        const wasOpen = fluxPanel.classList.contains('open');
+        const wasOpen = fluxOverlay.classList.contains('open');
         _closeAllPanels();
         if (!wasOpen) {
-            fluxPanel.classList.add('open');
+            fluxOverlay.classList.add('open');
             btnFlux.classList.add('alert-active');
             fetchFlux();
-            fluxRefreshInterval = setInterval(fetchFlux, 10000);
+            fluxRefreshInterval = setInterval(fetchFlux, 8000);
         }
     });
-    btnFluxRefresh.addEventListener('click', fetchFlux);
+    document.getElementById('btn-flux-close').addEventListener('click', _closeAllPanels);
+    document.getElementById('btn-flux-refresh').addEventListener('click', fetchFlux);
 
     async function fetchFlux() {
         try {
             const r = await fetch('/api/flux');
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const data = await r.json();
-            renderScans(data.active_scans || []);
+            const flows = data.flows || [];
+            const total = flows.reduce((s, f) => s + f.count, 0);
+            const scans = data.active_scans || [];
+            document.getElementById('flux-ov-summary').textContent =
+                flows.length + ' flux  |  ' + total + ' evt  |  '
+                + scans.length + ' scan(s)  |  '
+                + (data.port_heatmap || []).length + ' ports cibles';
+            renderFluxDiagram(data);
             renderHeatmap(data.port_heatmap || []);
             renderTimeline(data.timeline || []);
-            renderFlows(data.flows || []);
-            const total = (data.flows || []).reduce((s, f) => s + f.count, 0);
-            document.getElementById('flux-summary').textContent =
-                (data.flows || []).length + ' flux  |  ' + total + ' evenements  |  '
-                + (data.active_scans || []).length + ' scan(s) actif(s)';
         } catch(e) {
-            document.getElementById('flux-flows').innerHTML =
-                '<div class="ip-error">ERREUR : ' + e.message + '</div>';
+            document.getElementById('flux-ov-summary').textContent = 'ERREUR : ' + e.message;
         }
-    }
-
-    function renderScans(scans) {
-        const el = document.getElementById('flux-scans');
-        el.innerHTML = '';
-        scans.forEach(s => {
-            const div = document.createElement('div');
-            div.className = 'scan-alert';
-
-            const top = document.createElement('div');
-            top.className = 'scan-alert-top';
-
-            const badge = document.createElement('span');
-            badge.className = 'scan-badge'; badge.textContent = 'SCAN';
-            top.appendChild(badge);
-
-            const ip = document.createElement('span');
-            ip.className = 'scan-ip'; ip.textContent = s.ip;
-            top.appendChild(ip);
-
-            const cnt = document.createElement('span');
-            cnt.style.cssText = 'font-size:9px;color:#553300;';
-            cnt.textContent = s.port_count + ' ports';
-            top.appendChild(cnt);
-
-            const ports = document.createElement('div');
-            ports.className = 'scan-ports';
-            ports.textContent = 'Ports : ' + s.ports.join(', ')
-                + '  —  debut ' + relativeTime(s.started.replace(' ','T') + 'Z');
-            div.appendChild(top);
-            div.appendChild(ports);
-            el.appendChild(div);
-        });
     }
 
     function renderHeatmap(data) {
@@ -2286,84 +2323,285 @@
         });
     }
 
-    function renderFlows(flows) {
-        const el = document.getElementById('flux-flows');
-        el.innerHTML = '';
+    // ---------------------------------------------------------------------------
+    // Diagramme SVG anime : Sources → Serveur → Ports
+    // ---------------------------------------------------------------------------
+    function renderFluxDiagram(data) {
+        const NS   = 'http://www.w3.org/2000/svg';
+        const svg  = document.getElementById('flux-svg');
+        const diag = document.getElementById('flux-diagram');
+        const W    = diag.clientWidth  || 1100;
+        const H    = diag.clientHeight || 480;
+
+        svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+        const flows  = (data.flows  || []).slice(0, 20);
+        const scans  = data.active_scans || [];
+
         if (!flows.length) {
-            el.innerHTML = '<div class="ip-empty">AUCUN FLUX HOSTILE RECENT</div>';
+            const t = document.createElementNS(NS, 'text');
+            t.setAttribute('x', W / 2); t.setAttribute('y', H / 2);
+            t.setAttribute('text-anchor', 'middle');
+            t.setAttribute('fill', '#1a1a1a');
+            t.setAttribute('font-size', '14');
+            t.setAttribute('font-family', 'Courier New');
+            t.setAttribute('letter-spacing', '4');
+            t.textContent = 'AUCUN FLUX HOSTILE RECENT';
+            svg.appendChild(t);
             return;
         }
 
-        // Grouper par IP
-        const byIp = {};
+        // Rassembler les sources et ports uniques
+        const srcMap  = {};
+        const portMap = {};
+        const ORDER   = {probe: 0, brute_force: 1, scan: 2};
+
         flows.forEach(f => {
-            if (!byIp[f.source_ip]) byIp[f.source_ip] = {flows: [], total: 0, threat: f.threat_level};
-            byIp[f.source_ip].flows.push(f);
-            byIp[f.source_ip].total += f.count;
-            // escalader la menace
-            const ORDER = {probe:0, brute_force:1, scan:2};
-            if ((ORDER[f.threat_level] || 0) > (ORDER[byIp[f.source_ip].threat] || 0))
-                byIp[f.source_ip].threat = f.threat_level;
+            const ip   = f.source_ip;
+            const port = f.target_port || 0;
+            if (!srcMap[ip]) srcMap[ip] = {threat: f.threat_level, total: 0};
+            srcMap[ip].total += f.count;
+            if ((ORDER[f.threat_level] || 0) > (ORDER[srcMap[ip].threat] || 0))
+                srcMap[ip].threat = f.threat_level;
+            if (!portMap[port]) portMap[port] = {service: f.target_service || '', total: 0};
+            portMap[port].total += f.count;
         });
 
-        const sorted = Object.entries(byIp).sort((a,b) => b[1].total - a[1].total);
+        const srcs  = Object.entries(srcMap).sort((a, b) => b[1].total - a[1].total);
+        const ports = Object.entries(portMap).sort((a, b) => b[1].total - a[1].total);
 
-        sorted.forEach(([ip, grp]) => {
-            const group = document.createElement('div');
-            group.className = 'flux-ip-group';
+        const COLORS = {brute_force: '#ff3333', scan: '#ff8833', probe: '#ccaa00'};
+        const THREAT_SHORT = {brute_force: 'BRUTE', scan: 'SCAN', probe: 'PRB'};
 
-            const header = document.createElement('div');
-            header.className = 'flux-ip-header';
+        // Layout
+        const MARGIN   = 44;
+        const NODE_SRC = 155;
+        const NODE_PRT = W - 155;
+        const SRV_CX   = W / 2;
+        const SRV_CY   = H / 2;
+        const SRV_W    = 68;
+        const SRV_H    = 110;
 
-            const badge = document.createElement('span');
-            badge.className = 'ip-badge ' + grp.threat;
-            badge.textContent = THREAT_LABEL[grp.threat] || grp.threat.toUpperCase();
-            header.appendChild(badge);
+        function yPos(idx, total, h) {
+            if (total === 1) return h / 2;
+            return MARGIN + idx * (h - 2 * MARGIN) / (total - 1);
+        }
 
-            const addr = document.createElement('span');
-            addr.className = 'flux-ip-addr'; addr.textContent = ip;
-            header.appendChild(addr);
+        function el(tag, attrs) {
+            const e = document.createElementNS(NS, tag);
+            Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+            return e;
+        }
 
-            const total = document.createElement('span');
-            total.className = 'flux-ip-total ' + grp.threat;
-            total.textContent = grp.total;
-            header.appendChild(total);
+        function txt(x, y, text, fill, size, anchor) {
+            const t = document.createElementNS(NS, 'text');
+            t.setAttribute('x', x); t.setAttribute('y', y);
+            t.setAttribute('text-anchor', anchor || 'start');
+            t.setAttribute('fill', fill || '#1a1a1a');
+            t.setAttribute('font-size', size || '10');
+            t.setAttribute('font-family', 'Courier New');
+            t.setAttribute('letter-spacing', '1');
+            t.textContent = text;
+            svg.appendChild(t);
+            return t;
+        }
 
-            // Toggle ports au clic
-            let expanded = true;
-            const portsDiv = document.createElement('div');
-            grp.flows.sort((a,b) => b.count - a.count).forEach(f => {
-                const row = document.createElement('div');
-                row.className = 'flux-port-row';
+        const maxCount = Math.max(1, ...flows.map(f => f.count));
 
-                const portNum = document.createElement('span');
-                portNum.className = 'flux-port-num';
-                portNum.textContent = f.target_port ? ':' + f.target_port : '-';
-                row.appendChild(portNum);
+        // Zones de fond
+        svg.appendChild(el('rect', {x:2, y: MARGIN - 22, width: NODE_SRC + 44,
+            height: H - (MARGIN - 22) * 2, fill:'#060300', rx:'4'}));
+        svg.appendChild(el('rect', {x: NODE_PRT - 44, y: MARGIN - 22,
+            width: W - (NODE_PRT - 44) - 2, height: H - (MARGIN - 22) * 2,
+            fill:'#000306', rx:'4'}));
 
-                const svc = document.createElement('span');
-                svc.className = 'flux-port-svc'; svc.textContent = f.target_service || '';
-                row.appendChild(svc);
+        txt(NODE_SRC - 10, MARGIN - 6, 'SOURCES',  '#1c1c1c', '9', 'middle');
+        txt(SRV_CX,        MARGIN - 6, 'SERVEUR',  '#1c1c1c', '9', 'middle');
+        txt(NODE_PRT + 10, MARGIN - 6, 'PORTS',    '#1c1c1c', '9', 'middle');
 
-                const cnt = document.createElement('span');
-                cnt.className = 'flux-port-cnt'; cnt.textContent = f.count;
-                row.appendChild(cnt);
+        // Serveur (rendu avant les flux pour etre en dessous des courbes claires)
+        svg.appendChild(el('ellipse', {cx: SRV_CX, cy: SRV_CY,
+            rx: SRV_W * 1.1, ry: SRV_H * 0.55,
+            fill:'#081408', 'fill-opacity':'0.6'}));
 
-                const rate = document.createElement('span');
-                rate.className = 'flux-port-rate'; rate.textContent = f.rate + '/min';
-                row.appendChild(rate);
+        svg.appendChild(el('rect', {x: SRV_CX - SRV_W / 2, y: SRV_CY - SRV_H / 2,
+            width: SRV_W, height: SRV_H,
+            fill:'#080808', stroke:'#1a3a1a', 'stroke-width':'1', rx:'4'}));
 
-                portsDiv.appendChild(row);
-            });
+        for (let li = 0; li < 5; li++) {
+            svg.appendChild(el('rect', {
+                x: SRV_CX - SRV_W / 2 + 7, y: SRV_CY - SRV_H / 2 + 10 + li * 18,
+                width: SRV_W - 14, height: 10,
+                fill:'#0c0c0c', stroke:'#181818', 'stroke-width':'0.5', rx:'1'}));
+            svg.appendChild(el('circle', {
+                cx: SRV_CX + SRV_W / 2 - 12, cy: SRV_CY - SRV_H / 2 + 15 + li * 18,
+                r:'2', fill: li === 0 ? '#33aa33' : '#0e1e0e'}));
+        }
+        txt(SRV_CX, SRV_CY + SRV_H / 2 + 14, 'SERVER', '#252525', '9', 'middle');
 
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                portsDiv.style.display = expanded ? '' : 'none';
-            });
+        // Flux : courbes de Bezier animees
+        flows.forEach((f, fi) => {
+            const si = srcs.findIndex(([ip]) => ip === f.source_ip);
+            const pi = ports.findIndex(([p]) => Number(p) === (f.target_port || 0));
+            if (si < 0 || pi < 0) return;
 
-            group.appendChild(header);
-            group.appendChild(portsDiv);
-            el.appendChild(group);
+            const sy  = yPos(si, srcs.length,  H);
+            const py  = yPos(pi, ports.length, H);
+            const x1  = NODE_SRC + 12;
+            const x2  = NODE_PRT - 12;
+            const ent = SRV_CX - SRV_W / 2;
+            const ext = SRV_CX + SRV_W / 2;
+
+            // Ventilation verticale des points d'entree/sortie du serveur
+            const spread = Math.min(60, (ports.length - 1) * 12);
+            const ey = SRV_CY + (pi - (ports.length - 1) / 2) * (ports.length > 1 ? spread / (ports.length - 1) : 0);
+
+            const color = COLORS[f.threat_level] || '#555';
+            const alpha = (0.1 + 0.45 * (f.count / maxCount)).toFixed(2);
+            const sw    = (0.5 + 3 * (f.count / maxCount)).toFixed(1);
+
+            // Segment source → serveur
+            const pidA = 'fa' + fi;
+            const dA = 'M' + x1 + ',' + sy +
+                ' C' + (x1 + (ent - x1) * 0.55) + ',' + sy +
+                ' '  + (x1 + (ent - x1) * 0.45) + ',' + ey +
+                ' '  + ent + ',' + ey;
+            const pA = el('path', {id: pidA, d: dA, fill:'none',
+                stroke: color, 'stroke-width': sw, 'stroke-opacity': alpha});
+            svg.appendChild(pA);
+
+            // Segment serveur → port
+            const pidB = 'fb' + fi;
+            const dB = 'M' + ext + ',' + ey +
+                ' C' + (ext + (x2 - ext) * 0.45) + ',' + ey +
+                ' '  + (ext + (x2 - ext) * 0.55) + ',' + py +
+                ' '  + x2 + ',' + py;
+            const pB = el('path', {id: pidB, d: dB, fill:'none',
+                stroke: color, 'stroke-width': sw, 'stroke-opacity': alpha});
+            svg.appendChild(pB);
+
+            // Paquets animes
+            const rate  = f.rate || 0.3;
+            const dur   = Math.max(0.5, 3.5 / rate).toFixed(2);
+            const nPkts = Math.min(6, Math.max(1, Math.round(rate)));
+            const r     = Math.max(1.5, parseFloat(sw) * 0.7).toFixed(1);
+
+            for (let pi2 = 0; pi2 < nPkts; pi2++) {
+                const begin = ((pi2 / nPkts) * parseFloat(dur)).toFixed(2);
+                const segDur = (parseFloat(dur) * 0.52).toFixed(2);
+
+                // Source → Serveur
+                const cA = el('circle', {r, fill: color, opacity:'0.9'});
+                const mA = document.createElementNS(NS, 'animateMotion');
+                mA.setAttribute('dur', segDur + 's');
+                mA.setAttribute('begin', begin + 's');
+                mA.setAttribute('repeatCount', 'indefinite');
+                mA.setAttribute('calcMode', 'linear');
+                const mpA = document.createElementNS(NS, 'mpath');
+                mpA.setAttribute('href', '#' + pidA);
+                mpA.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + pidA);
+                mA.appendChild(mpA); cA.appendChild(mA); svg.appendChild(cA);
+
+                // Serveur → Port (leger decalage)
+                const beginB = (parseFloat(begin) + parseFloat(dur) * 0.07).toFixed(2);
+                const cB = el('circle', {r, fill: color, opacity:'0.9'});
+                const mB = document.createElementNS(NS, 'animateMotion');
+                mB.setAttribute('dur', segDur + 's');
+                mB.setAttribute('begin', beginB + 's');
+                mB.setAttribute('repeatCount', 'indefinite');
+                mB.setAttribute('calcMode', 'linear');
+                const mpB = document.createElementNS(NS, 'mpath');
+                mpB.setAttribute('href', '#' + pidB);
+                mpB.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + pidB);
+                mB.appendChild(mpB); cB.appendChild(mB); svg.appendChild(cB);
+            }
+        });
+
+        // Noeuds sources (IPs attaquantes)
+        srcs.forEach(([ip, info], i) => {
+            const y     = yPos(i, srcs.length, H);
+            const color = COLORS[info.threat] || '#555';
+            const isScan = scans.some(s => s.ip === ip);
+
+            // Anneau externe (scan = double anneau)
+            if (isScan) {
+                svg.appendChild(el('circle', {cx: NODE_SRC, cy: y, r:'13',
+                    fill:'none', stroke: color, 'stroke-width':'0.5', 'stroke-opacity':'0.2',
+                    'stroke-dasharray':'3 3'}));
+            }
+            svg.appendChild(el('circle', {cx: NODE_SRC, cy: y, r:'7',
+                fill: color, 'fill-opacity':'0.1',
+                stroke: color, 'stroke-width':'1', 'stroke-opacity':'0.5'}));
+            svg.appendChild(el('circle', {cx: NODE_SRC, cy: y, r:'3', fill: color}));
+
+            // Etiquette IP
+            const ipT = document.createElementNS(NS, 'text');
+            ipT.setAttribute('x', NODE_SRC - 12); ipT.setAttribute('y', y + 4);
+            ipT.setAttribute('text-anchor', 'end');
+            ipT.setAttribute('fill', color); ipT.setAttribute('fill-opacity', '0.75');
+            ipT.setAttribute('font-size', '11'); ipT.setAttribute('font-family', 'Courier New');
+            ipT.textContent = ip;
+            svg.appendChild(ipT);
+
+            // Badge menace + compteur
+            const bT = document.createElementNS(NS, 'text');
+            bT.setAttribute('x', NODE_SRC + 12); bT.setAttribute('y', y - 5);
+            bT.setAttribute('fill', color); bT.setAttribute('fill-opacity', '0.45');
+            bT.setAttribute('font-size', '8'); bT.setAttribute('font-family', 'Courier New');
+            bT.textContent = (THREAT_SHORT[info.threat] || '') + (isScan ? ' SCAN' : '');
+            svg.appendChild(bT);
+
+            const cntT = document.createElementNS(NS, 'text');
+            cntT.setAttribute('x', NODE_SRC + 12); cntT.setAttribute('y', y + 4);
+            cntT.setAttribute('fill', '#2a2a2a');
+            cntT.setAttribute('font-size', '10'); cntT.setAttribute('font-family', 'Courier New');
+            cntT.textContent = info.total + ' evt';
+            svg.appendChild(cntT);
+        });
+
+        // Noeuds ports (cibles)
+        ports.forEach(([port, info], i) => {
+            const y = yPos(i, ports.length, H);
+
+            svg.appendChild(el('circle', {cx: NODE_PRT, cy: y, r:'7',
+                fill:'#2266aa', 'fill-opacity':'0.08',
+                stroke:'#2266aa', 'stroke-width':'1', 'stroke-opacity':'0.45'}));
+            svg.appendChild(el('circle', {cx: NODE_PRT, cy: y, r:'3', fill:'#2266aa'}));
+
+            const portT = document.createElementNS(NS, 'text');
+            portT.setAttribute('x', NODE_PRT + 12); portT.setAttribute('y', y + 4);
+            portT.setAttribute('fill', '#3377bb'); portT.setAttribute('fill-opacity', '0.75');
+            portT.setAttribute('font-size', '11'); portT.setAttribute('font-family', 'Courier New');
+            portT.textContent = ':' + (port || '?')
+                + (info.service ? '  ' + info.service.toUpperCase() : '');
+            svg.appendChild(portT);
+
+            const cntT = document.createElementNS(NS, 'text');
+            cntT.setAttribute('x', NODE_PRT - 12); cntT.setAttribute('y', y - 5);
+            cntT.setAttribute('text-anchor', 'end');
+            cntT.setAttribute('fill', '#2a2a2a');
+            cntT.setAttribute('font-size', '10'); cntT.setAttribute('font-family', 'Courier New');
+            cntT.textContent = info.total + ' evt';
+            svg.appendChild(cntT);
+        });
+
+        // Legende bas-centre
+        const LEGEND = [
+            {l: 'BRUTE FORCE', c: '#ff3333'},
+            {l: 'SCAN',        c: '#ff8833'},
+            {l: 'PROBE',       c: '#ccaa00'}
+        ];
+        LEGEND.forEach((leg, li) => {
+            const lx = SRV_CX - 80 + li * 65;
+            const ly = H - 8;
+            svg.appendChild(el('circle', {cx: lx, cy: ly - 2, r:'3', fill: leg.c}));
+            const lt = document.createElementNS(NS, 'text');
+            lt.setAttribute('x', lx + 7); lt.setAttribute('y', ly + 1);
+            lt.setAttribute('fill', '#2a2a2a');
+            lt.setAttribute('font-size', '8'); lt.setAttribute('font-family', 'Courier New');
+            lt.textContent = leg.l;
+            svg.appendChild(lt);
         });
     }
 
