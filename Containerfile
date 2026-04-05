@@ -13,7 +13,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd \
         curl \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Fuseau horaire : herite de TZ si defini au lancement (podman run -e TZ=Europe/Paris),
+# sinon Europe/Paris par defaut.
+ENV TZ=Europe/Paris
+RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone
 
 COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

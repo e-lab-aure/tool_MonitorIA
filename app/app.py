@@ -45,8 +45,14 @@ BLOCKLIST_PATH = os.environ.get("BLOCKLIST_PATH", "/app/config/blocklist.json")
 IP_LOGS_DIR    = os.environ.get("IP_LOGS_DIR",    "/app/config/ip_logs")
 
 # Table nftables geree par MonitorIA (creee automatiquement si absente)
-NFT_TABLE = "monitoria"
-NFT_SET   = "blocklist"
+NFT_TABLE    = "monitoria"
+NFT_SET      = "blocklist"
+
+# Chemin du fichier de configuration nftables de l'hote.
+# En conteneur rootless, monter le fichier hote avec :
+#   -v /etc/nftables.conf:/host/nftables.conf:ro
+# puis definir NFT_CONF_PATH=/host/nftables.conf
+NFT_CONF_PATH = os.environ.get("NFT_CONF_PATH", "/etc/nftables.conf")
 
 # Taille maximale du dossier de logs IP (1 Go)
 IP_LOGS_MAX_BYTES = 1 * 1024 * 1024 * 1024
@@ -970,7 +976,9 @@ def _nft_setup_monitoria() -> tuple[bool, str]:
 
 
 def _nft_set_exists() -> bool:
-    """Verifie si le set monitoria/blocklist existe dans nftables."""
+    """Verifie si le set monitoria/blocklist existe dans nftables. Retourne False si nft absent."""
+    if not _nft_available():
+        return False
     r = subprocess.run(
         ["nft", "list", "set", "inet", NFT_TABLE, NFT_SET],
         capture_output=True, text=True
@@ -1070,26 +1078,61 @@ def save_blocked_ips() -> None:
             pass
 
 
+def _nft_available() -> bool:
+    """Retourne True si la commande nft est accessible dans le PATH."""
+    r = subprocess.run(["which", "nft"], capture_output=True, text=True)
+    return r.returncode == 0
+
+
+def _read_nft_conf_file() -> tuple[bool, str]:
+    """
+    Fallback : lit le fichier nftables.conf directement (utile en conteneur rootless).
+    Retourne (succes, contenu).
+    """
+    if not os.path.isfile(NFT_CONF_PATH):
+        return False, f"Fichier {NFT_CONF_PATH} introuvable (monter avec -v /etc/nftables.conf:{NFT_CONF_PATH}:ro)"
+    try:
+        with open(NFT_CONF_PATH, "r") as f:
+            return True, f.read()
+    except IOError as exc:
+        return False, str(exc)
+
+
 def get_nft_ruleset() -> tuple[bool, str]:
-    """Retourne la sortie complete de 'nft list ruleset' (lecture seule)."""
-    r = subprocess.run(
-        ["nft", "list", "ruleset"],
-        capture_output=True, text=True, timeout=5
-    )
-    if r.returncode == 0:
-        return True, r.stdout
-    return False, r.stderr.strip()
+    """
+    Retourne la configuration nftables.
+    Priorite : 'nft list ruleset' si disponible, sinon lecture de NFT_CONF_PATH.
+    """
+    if _nft_available():
+        r = subprocess.run(
+            ["nft", "list", "ruleset"],
+            capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0:
+            return True, r.stdout
+        return False, r.stderr.strip()
+    # Fallback fichier (conteneur rootless)
+    ok, content = _read_nft_conf_file()
+    if ok:
+        return True, f"# Lecture depuis {NFT_CONF_PATH} (nft absent - conteneur rootless)\n\n{content}"
+    return False, content
 
 
 def nft_verify() -> tuple[bool, str]:
-    """Verifie la configuration nftables via 'nft -c -f /etc/nftables.conf'."""
-    r = subprocess.run(
-        ["nft", "-c", "-f", "/etc/nftables.conf"],
-        capture_output=True, text=True, timeout=5
-    )
-    if r.returncode == 0:
-        return True, "Configuration nftables valide"
-    return False, r.stderr.strip() or "Erreur de verification"
+    """Verifie la configuration nftables."""
+    if _nft_available():
+        r = subprocess.run(
+            ["nft", "-c", "-f", NFT_CONF_PATH],
+            capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0:
+            return True, "Configuration nftables valide"
+        return False, r.stderr.strip() or "Erreur de verification"
+    # Fallback : verifier que le fichier est lisible
+    ok, _ = _read_nft_conf_file()
+    if ok:
+        return True, f"Fichier {NFT_CONF_PATH} lisible (verification syntaxique indisponible sans nft)"
+    return False, f"nft absent et {NFT_CONF_PATH} inaccessible"
 
 
 def nft_restart() -> tuple[bool, str]:
@@ -1867,15 +1910,27 @@ def api_diagnostics() -> Response:
                 f"{email_config['smtp_host']}:{email_config.get('smtp_port', 587)} "
                 f"({email_config.get('smtp_security', 'starttls')}) -> {email_config['recipient']}")
 
-    # 8. nftables : table monitoria
-    try:
-        if _nft_set_exists():
-            chk("nftables:monitoria_set", "ok", f"inet {NFT_TABLE}/{NFT_SET} present")
+    # 8. nftables
+    if not _nft_available():
+        # Conteneur rootless : nft inaccessible, fallback lecture fichier
+        ok_conf, _ = _read_nft_conf_file()
+        if ok_conf:
+            chk("nftables:monitoria_set", "warn",
+                f"nft absent (conteneur rootless) - config lisible depuis {NFT_CONF_PATH} "
+                f"(monter avec -v /etc/nftables.conf:{NFT_CONF_PATH}:ro)")
         else:
             chk("nftables:monitoria_set", "warn",
-                "set absent - sera cree automatiquement au premier blocage d'IP")
-    except Exception as exc:
-        chk("nftables:monitoria_set", "err", str(exc)[:80])
+                f"nft absent (conteneur rootless) - monter le fichier hote avec "
+                f"-v /etc/nftables.conf:{NFT_CONF_PATH}:ro pour voir la config")
+    else:
+        try:
+            if _nft_set_exists():
+                chk("nftables:monitoria_set", "ok", f"inet {NFT_TABLE}/{NFT_SET} present")
+            else:
+                chk("nftables:monitoria_set", "warn",
+                    "set absent - sera cree automatiquement au premier blocage d'IP")
+        except Exception as exc:
+            chk("nftables:monitoria_set", "err", str(exc)[:80])
 
     # 9. Whitelist et regles d'exception
     with _whitelist_lock:
@@ -2150,8 +2205,12 @@ def _parse_nft_expr(expr_list: list) -> dict:
 def get_nft_rules_json() -> dict:
     """
     Retourne les tables, chaines et regles nftables via 'nft -j list ruleset'.
-    Fallback vers le texte brut si le flag -j n'est pas supporte.
+    Fallback vers le texte brut si le flag -j n'est pas supporte ou nft absent.
     """
+    if not _nft_available():
+        ok, raw = get_nft_ruleset()
+        return {"json_available": False, "raw": raw,
+                "info": "nft absent - lecture depuis fichier de configuration"}
     r = subprocess.run(
         ["nft", "-j", "list", "ruleset"],
         capture_output=True, text=True, timeout=5
