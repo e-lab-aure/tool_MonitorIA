@@ -52,7 +52,7 @@ NFT_SET      = "blocklist"
 # En conteneur rootless, monter le fichier hote avec :
 #   -v /etc/nftables.conf:/host/nftables.conf:ro
 # puis definir NFT_CONF_PATH=/host/nftables.conf
-NFT_CONF_PATH = os.environ.get("NFT_CONF_PATH", "/etc/nftables.conf")
+NFT_CONF_PATH = os.environ.get("NFT_CONF_PATH", "/app/config/nftables.conf")
 
 # Taille maximale du dossier de logs IP (1 Go)
 IP_LOGS_MAX_BYTES = 1 * 1024 * 1024 * 1024

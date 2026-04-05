@@ -34,8 +34,6 @@ podman run -d \
     -v /var/log:/var/log:ro,z \
     -v /run/log/journal:/run/log/journal:ro,z \
     -v "$CONFIG_DIR":/app/config:z \
-    -v /etc/nftables.conf:/host/nftables.conf:ro,z \
-    -e NFT_CONF_PATH=/host/nftables.conf \
     -e TZ=Europe/Paris \
     --group-add keep-groups \
     --restart unless-stopped \
