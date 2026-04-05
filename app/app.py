@@ -1724,18 +1724,39 @@ def api_diagnostics() -> Response:
         chk("journalctl:access", "err", str(exc)[:80])
 
     # 3. Fichiers de logs surveilles
+    # Chaque entree : (chemin, service, alt_paths, note_si_absent)
+    # alt_paths : si l'un d'eux existe, l'absence du fichier courant est normale (ok).
+    # note_si_absent : message informatif quand absent sans alternative.
     watched_files = [
-        ("/var/log/fail2ban.log",       "fail2ban"),
-        ("/var/log/auth.log",           "SSH"),
-        ("/var/log/secure",             "SSH"),
-        ("/var/log/kern.log",           "nftables"),
-        ("/var/log/nginx/access.log",   "HTTP"),
-        ("/var/log/nginx/error.log",    "HTTP"),
-        ("/var/log/apache2/access.log", "HTTP"),
-        ("/var/log/apache2/error.log",  "HTTP"),
-        ("/var/log/httpd/access_log",   "HTTP"),
+        ("/var/log/fail2ban.log",
+            "fail2ban", [],
+            "fail2ban non installe ou pas de ban recent"),
+        ("/var/log/auth.log",
+            "SSH", ["/var/log/secure"],
+            "SSH (Debian/Ubuntu) - verifier si sshd est actif"),
+        ("/var/log/secure",
+            "SSH", ["/var/log/auth.log"],
+            "SSH (RHEL/CentOS) - normal sur Debian/Ubuntu"),
+        ("/var/log/kern.log",
+            "nftables/kernel", [],
+            "messages kernel - verifier rsyslog"),
+        ("/var/log/nginx/access.log",
+            "nginx", ["/var/log/apache2/access.log", "/var/log/httpd/access_log"],
+            "nginx non installe"),
+        ("/var/log/nginx/error.log",
+            "nginx", ["/var/log/apache2/error.log"],
+            "nginx non installe"),
+        ("/var/log/apache2/access.log",
+            "apache2", ["/var/log/nginx/access.log", "/var/log/httpd/access_log"],
+            "apache2 non installe"),
+        ("/var/log/apache2/error.log",
+            "apache2", ["/var/log/nginx/error.log"],
+            "apache2 non installe"),
+        ("/var/log/httpd/access_log",
+            "httpd (RHEL)", ["/var/log/nginx/access.log", "/var/log/apache2/access.log"],
+            "httpd non installe"),
     ]
-    for fpath, svc in watched_files:
+    for fpath, svc, alt_paths, note_absent in watched_files:
         name = f"log:{os.path.basename(fpath)}"
         if os.path.exists(fpath):
             if os.access(fpath, os.R_OK):
@@ -1744,7 +1765,12 @@ def api_diagnostics() -> Response:
             else:
                 chk(name, "err", f"{svc} - permission refusee (lancer en root ?)")
         else:
-            chk(name, "warn", f"{svc} - fichier absent (service inactif ?)")
+            # Si une alternative est presente, l'absence est normale
+            alt_present = any(os.path.exists(a) for a in alt_paths)
+            if alt_present:
+                chk(name, "ok", f"absent - normal ({note_absent})")
+            else:
+                chk(name, "warn", f"{note_absent}")
 
     # 4. Fichiers de configuration MonitorIA
     config_files = [
