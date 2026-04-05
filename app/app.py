@@ -623,8 +623,6 @@ def record_ip_event(ip: str, service: str, log_type: str, line: str = "") -> Non
         bucket["services"][service] = bucket["services"].get(service, 0) + 1
         bucket["types"][log_type]   = bucket["types"].get(log_type, 0) + 1
         if line:
-            if "log_lines" not in bucket:
-                bucket["log_lines"] = []
             bucket["log_lines"].append(line)
             if len(bucket["log_lines"]) > CONTEXT_LINES_MAX:
                 bucket["log_lines"] = bucket["log_lines"][-CONTEXT_LINES_MAX:]
@@ -1840,18 +1838,17 @@ def compute_flux() -> dict:
     port_older:  dict[int, int] = {}
     port_svcs:   dict[int, str] = {}
 
-    with _buffer_lock:
-        for evt in _event_buffer:
-            if evt.get("type") not in _HOSTILE_TYPES:
-                continue
-            port = extract_port(evt.get("line", ""), evt.get("service"))
-            if port is None:
-                continue
-            port_svcs.setdefault(port, evt.get("service", ""))
-            if evt.get("timestamp", "") >= mid_str:
-                port_recent[port] = port_recent.get(port, 0) + 1
-            else:
-                port_older[port] = port_older.get(port, 0) + 1
+    for evt in snapshot:
+        if evt.get("type") not in _HOSTILE_TYPES:
+            continue
+        port = extract_port(evt.get("line", ""), evt.get("service"))
+        if port is None:
+            continue
+        port_svcs.setdefault(port, evt.get("service", ""))
+        if evt.get("timestamp", "") >= mid_str:
+            port_recent[port] = port_recent.get(port, 0) + 1
+        else:
+            port_older[port] = port_older.get(port, 0) + 1
 
     all_ports = set(port_recent) | set(port_older)
     heatmap   = []

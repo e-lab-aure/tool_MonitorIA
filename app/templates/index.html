@@ -429,8 +429,9 @@
         }
         .alert-row:hover { background: #0d0d0d; }
         .alert-row-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
-        .alert-ts { font-size: 9px; color: #2a2a2a; flex-shrink: 0; }
-        .alert-ip { font-size: 10px; color: #666; flex: 1; }
+        .alert-ts  { font-size: 9px; color: #2a2a2a; flex-shrink: 0; }
+        .alert-ip  { font-size: 10px; color: #666; flex: 1; }
+        .alert-svc { font-size: 10px; color: #555; flex-shrink: 0; }
         .alert-line { font-size: 9px; color: #2e2e2e; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
 
         /* Textarea pour whitelist dans la modal */
@@ -1439,9 +1440,8 @@
             top.appendChild(badge);
 
             const svcSpan = document.createElement('span');
-            svcSpan.style.fontSize = '10px';
-            svcSpan.style.color    = '#555';
-            svcSpan.textContent    = a.service || '';
+            svcSpan.className   = 'alert-svc';
+            svcSpan.textContent = a.service || '';
             top.appendChild(svcSpan);
 
             const ipSpan = document.createElement('span');
@@ -1509,9 +1509,11 @@
 
     // Toggle ouverture / fermeture du panneau
     btnIps.addEventListener('click', () => {
-        const open = ipPanel.classList.toggle('open');
-        btnIps.classList.toggle('alert-active', open);
-        if (open) {
+        const wasOpen = ipPanel.classList.contains('open');
+        _closeAllPanels();
+        if (!wasOpen) {
+            ipPanel.classList.add('open');
+            btnIps.classList.add('alert-active');
             if (activeTab === 'ips') {
                 fetchIpStats();
                 ipRefreshInterval = setInterval(fetchIpStats, 15000);
@@ -1519,11 +1521,6 @@
                 fetchAlertHistory();
                 alertRefreshInterval = setInterval(fetchAlertHistory, 30000);
             }
-        } else {
-            clearInterval(ipRefreshInterval);
-            clearInterval(alertRefreshInterval);
-            ipRefreshInterval    = null;
-            alertRefreshInterval = null;
         }
     });
 
@@ -1796,24 +1793,6 @@
         }
     }
 
-    // Gestion des onglets NFT
-    document.getElementById('nft-tab-blocked').addEventListener('click', () => {
-        nftActiveTab = 'blocked';
-        document.getElementById('nft-tab-blocked').classList.add('active');
-        document.getElementById('nft-tab-rules').classList.remove('active');
-        document.getElementById('nft-list-blocked').style.display = '';
-        document.getElementById('nft-list-rules').style.display = 'none';
-        fetchBlockedIps();
-    });
-    document.getElementById('nft-tab-rules').addEventListener('click', () => {
-        nftActiveTab = 'rules';
-        document.getElementById('nft-tab-rules').classList.add('active');
-        document.getElementById('nft-tab-blocked').classList.remove('active');
-        document.getElementById('nft-list-rules').style.display = '';
-        document.getElementById('nft-list-blocked').style.display = 'none';
-        fetchNftRuleset();
-    });
-
     // Bouton BLOQUER manuel
     document.getElementById('btn-block-manual').addEventListener('click', async () => {
         const ip = document.getElementById('block-ip-input').value.trim();
@@ -1857,41 +1836,22 @@
 
     // Refresh selon l'onglet actif
     btnNftRefresh.addEventListener('click', () => {
-        if (nftActiveTab === 'blocked') fetchBlockedIps();
-        else fetchNftRuleset();
+        if      (nftActiveTab === 'blocked') fetchBlockedIps();
+        else if (nftActiveTab === 'editor')  fetchNftEditor();
+        else                                 fetchNftRuleset();
     });
 
     // Toggle ouverture / fermeture panneau nftables
     btnNft.addEventListener('click', () => {
-        // Fermer le panneau IPS si ouvert
-        if (ipPanel.classList.contains('open')) {
-            ipPanel.classList.remove('open');
-            btnIps.classList.remove('alert-active');
-            clearInterval(ipRefreshInterval);
-            clearInterval(alertRefreshInterval);
-            ipRefreshInterval = alertRefreshInterval = null;
-        }
-        const open = nftPanel.classList.toggle('open');
-        btnNft.classList.toggle('alert-active', open);
-        if (open) {
+        const wasOpen = nftPanel.classList.contains('open');
+        _closeAllPanels();
+        if (!wasOpen) {
+            nftPanel.classList.add('open');
+            btnNft.classList.add('alert-active');
             fetchBlockedIps();
             nftRefreshInterval = setInterval(fetchBlockedIps, 30000);
-        } else {
-            clearInterval(nftRefreshInterval);
-            nftRefreshInterval = null;
         }
     });
-
-    // Fermer nftables panel si IPS panel ouvre
-    btnIps.addEventListener('click', () => {
-        if (nftPanel.classList.contains('open')) {
-            nftPanel.classList.remove('open');
-            btnNft.classList.remove('alert-active');
-            clearInterval(nftRefreshInterval);
-            nftRefreshInterval = null;
-        }
-    }, true); // capture pour s'executer avant le handler existant
-
 
     // ---------------------------------------------------------------------------
     // Onglet EDITEUR dans le panneau nftables
@@ -1908,7 +1868,6 @@
         fetchNftEditor();
     });
 
-    // Modifier le handler nft-tab-rules pour mettre a jour nftActiveTab correctement
     document.getElementById('nft-tab-rules').addEventListener('click', () => {
         nftActiveTab = 'rules';
         ['nft-tab-blocked','nft-tab-editor','nft-tab-rules'].forEach(id =>
@@ -1919,7 +1878,6 @@
         fetchNftRuleset();
     });
 
-    // Etendre le handler nft-tab-blocked
     document.getElementById('nft-tab-blocked').addEventListener('click', () => {
         nftActiveTab = 'blocked';
         ['nft-tab-blocked','nft-tab-editor','nft-tab-rules'].forEach(id =>
@@ -1930,12 +1888,6 @@
         fetchBlockedIps();
     });
 
-    // Etendre le handler refresh pour l'editeur
-    const _origNftRefresh = btnNftRefresh.onclick;
-    btnNftRefresh.addEventListener('click', () => {
-        if (nftActiveTab === 'editor') fetchNftEditor();
-    });
-
     async function fetchNftEditor() {
         const cardsDiv = document.getElementById('nft-rule-cards');
         cardsDiv.innerHTML = '<div class="ip-empty">Chargement...</div>';
@@ -1943,10 +1895,18 @@
             const r = await fetch('/api/nftables/rules');
             nftEditorData = await r.json();
             if (!nftEditorData.json_available) {
-                cardsDiv.innerHTML =
-                    '<div class="ip-empty" style="color:#553300">nft -j non disponible<br>'
-                    + 'Mettez a jour nftables (>= 0.9.1)<br>'
-                    + '<span style="color:#2a2a2a;font-size:9px">' + (nftEditorData.raw || '') + '</span></div>';
+                cardsDiv.innerHTML = '';
+                const msg = document.createElement('div');
+                msg.className = 'ip-empty';
+                msg.style.color = '#553300';
+                msg.appendChild(document.createTextNode('nft -j non disponible'));
+                msg.appendChild(document.createElement('br'));
+                msg.appendChild(document.createTextNode('Mettez a jour nftables (>= 0.9.1)'));
+                const rawSpan = document.createElement('span');
+                rawSpan.style.cssText = 'display:block;color:#2a2a2a;font-size:9px;margin-top:4px;';
+                rawSpan.textContent   = nftEditorData.raw || '';
+                msg.appendChild(rawSpan);
+                cardsDiv.appendChild(msg);
                 return;
             }
             populateNftSelectors(nftEditorData);
@@ -2190,22 +2150,6 @@
     });
     btnFluxRefresh.addEventListener('click', fetchFlux);
 
-    // Etendre les handlers IPS et NFT pour fermer les autres panneaux
-    btnIps.addEventListener('click', () => {
-        if (fluxPanel.classList.contains('open')) {
-            fluxPanel.classList.remove('open');
-            btnFlux.classList.remove('alert-active');
-            clearInterval(fluxRefreshInterval); fluxRefreshInterval = null;
-        }
-    }, true);
-    btnNft.addEventListener('click', () => {
-        if (fluxPanel.classList.contains('open')) {
-            fluxPanel.classList.remove('open');
-            btnFlux.classList.remove('alert-active');
-            clearInterval(fluxRefreshInterval); fluxRefreshInterval = null;
-        }
-    }, true);
-
     async function fetchFlux() {
         try {
             const r = await fetch('/api/flux');
@@ -2362,7 +2306,6 @@
                 byIp[f.source_ip].threat = f.threat_level;
         });
 
-        const THREAT_LABEL = {brute_force:'BRUTE', scan:'SCAN', probe:'PROBE'};
         const sorted = Object.entries(byIp).sort((a,b) => b[1].total - a[1].total);
 
         sorted.forEach(([ip, grp]) => {
