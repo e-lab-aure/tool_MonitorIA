@@ -1685,6 +1685,210 @@ def api_nft_add_rule() -> Response:
     return jsonify({"error": r.stderr.strip()}), 500
 
 
+@app.route("/api/diagnostics")
+def api_diagnostics() -> Response:
+    """
+    Verifie l'etat de tous les composants du systeme :
+    binaires, fichiers de log, config, GeoIP, AbuseIPDB, SMTP, nftables, runtime.
+    Chaque check retourne : { name, status: ok|warn|err, detail }.
+    """
+    checks = []
+
+    def chk(name: str, status: str, detail: str = "") -> None:
+        checks.append({"name": name, "status": status, "detail": detail})
+
+    # 1. Binaires systeme
+    for binary in ["journalctl", "nft", "systemctl"]:
+        try:
+            r = subprocess.run(["which", binary], capture_output=True, text=True, timeout=3)
+            if r.returncode == 0:
+                chk(f"binary:{binary}", "ok", r.stdout.strip())
+            else:
+                chk(f"binary:{binary}", "warn", "introuvable dans $PATH")
+        except Exception as exc:
+            chk(f"binary:{binary}", "err", str(exc)[:60])
+
+    # 2. Acces journalctl
+    try:
+        r = subprocess.run(
+            ["journalctl", "-n", "1", "--no-pager"],
+            capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0:
+            chk("journalctl:access", "ok", "journaux systemd lisibles")
+        else:
+            chk("journalctl:access", "warn", (r.stderr.strip()[:80] or "acces refuse"))
+    except FileNotFoundError:
+        chk("journalctl:access", "warn", "journalctl absent - surveillance via fichiers uniquement")
+    except Exception as exc:
+        chk("journalctl:access", "err", str(exc)[:80])
+
+    # 3. Fichiers de logs surveilles
+    watched_files = [
+        ("/var/log/fail2ban.log",       "fail2ban"),
+        ("/var/log/auth.log",           "SSH"),
+        ("/var/log/secure",             "SSH"),
+        ("/var/log/kern.log",           "nftables"),
+        ("/var/log/nginx/access.log",   "HTTP"),
+        ("/var/log/nginx/error.log",    "HTTP"),
+        ("/var/log/apache2/access.log", "HTTP"),
+        ("/var/log/apache2/error.log",  "HTTP"),
+        ("/var/log/httpd/access_log",   "HTTP"),
+    ]
+    for fpath, svc in watched_files:
+        name = f"log:{os.path.basename(fpath)}"
+        if os.path.exists(fpath):
+            if os.access(fpath, os.R_OK):
+                size_kb = round(os.path.getsize(fpath) / 1024, 1)
+                chk(name, "ok", f"{svc} - {size_kb} KB")
+            else:
+                chk(name, "err", f"{svc} - permission refusee (lancer en root ?)")
+        else:
+            chk(name, "warn", f"{svc} - fichier absent (service inactif ?)")
+
+    # 4. Fichiers de configuration MonitorIA
+    config_files = [
+        (CONFIG_PATH,    "config.json"),
+        (IP_STATS_PATH,  "ip_stats.json"),
+        (BLOCKLIST_PATH, "blocklist.json"),
+    ]
+    for fpath, label in config_files:
+        name = f"file:{label}"
+        if os.path.exists(fpath):
+            r_ok = os.access(fpath, os.R_OK)
+            w_ok = os.access(fpath, os.W_OK)
+            if r_ok and w_ok:
+                chk(name, "ok", fpath)
+            elif r_ok:
+                chk(name, "warn", f"lecture seule : {fpath}")
+            else:
+                chk(name, "err", f"non lisible : {fpath}")
+        else:
+            parent = os.path.dirname(fpath) or "."
+            if os.path.isdir(parent) and os.access(parent, os.W_OK):
+                chk(name, "ok", "absent - sera cree automatiquement")
+            else:
+                chk(name, "warn", f"absent et dossier parent non accessible : {parent}")
+
+    # Dossier de logs IP
+    if os.path.isdir(IP_LOGS_DIR):
+        if os.access(IP_LOGS_DIR, os.W_OK):
+            size_mb = round(_ip_logs_total_size() / 1024 / 1024, 1)
+            chk("dir:ip_logs", "ok", f"{IP_LOGS_DIR} - {size_mb} MB / {IP_LOGS_MAX_BYTES // 1024 // 1024} MB")
+        else:
+            chk("dir:ip_logs", "err", f"ecriture refusee : {IP_LOGS_DIR}")
+    else:
+        parent = os.path.dirname(IP_LOGS_DIR) or "."
+        if os.path.isdir(parent) and os.access(parent, os.W_OK):
+            chk("dir:ip_logs", "ok", "absent - sera cree automatiquement")
+        else:
+            chk("dir:ip_logs", "warn", f"absent et dossier parent inaccessible : {parent}")
+
+    # 5. GeoIP
+    if os.path.isfile(GEOIP_DB_PATH):
+        with _geoip_lock:
+            reader_ok = _geoip_reader is not None
+        if reader_ok:
+            size_mb = round(os.path.getsize(GEOIP_DB_PATH) / 1024 / 1024, 1)
+            chk("geoip:database", "ok", f"{GEOIP_DB_PATH} ({size_mb} MB)")
+        else:
+            chk("geoip:database", "err", "fichier present mais reader non charge")
+    else:
+        chk("geoip:database", "warn",
+            f"absent : {GEOIP_DB_PATH} - "
+            "telecharger GeoLite2-City.mmdb sur maxmind.com (compte gratuit)")
+
+    # 6. AbuseIPDB
+    if not ABUSEIPDB_API_KEY:
+        chk("abuseipdb:api_key", "warn",
+            "ABUSEIPDB_API_KEY non definie - scoring de reputation desactive")
+    else:
+        chk("abuseipdb:api_key", "ok", "cle configuree (" + "*" * 8 + ")")
+        try:
+            url = (
+                "https://api.abuseipdb.com/api/v2/check"
+                "?ipAddress=127.0.0.1&maxAgeInDays=1"
+            )
+            req = urllib.request.Request(url, headers={
+                "Key": ABUSEIPDB_API_KEY, "Accept": "application/json"
+            })
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode())
+            if "data" in data:
+                chk("abuseipdb:connectivity", "ok", "API accessible, cle valide")
+            else:
+                chk("abuseipdb:connectivity", "warn", "reponse inattendue : " + str(data)[:80])
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                chk("abuseipdb:connectivity", "err", "cle invalide (HTTP 401)")
+            elif exc.code == 429:
+                chk("abuseipdb:connectivity", "warn", "quota journalier atteint (HTTP 429 - 1000/j)")
+            else:
+                chk("abuseipdb:connectivity", "warn", f"HTTP {exc.code}")
+        except Exception as exc:
+            chk("abuseipdb:connectivity", "err", "connexion impossible : " + str(exc)[:80])
+
+    # 7. Configuration SMTP
+    if not email_config.get("enabled"):
+        chk("smtp:config", "warn", "alertes mail desactivees (activer dans CONFIG MAIL)")
+    else:
+        missing = [f for f in ("smtp_host", "smtp_user", "smtp_pass", "recipient")
+                   if not email_config.get(f)]
+        if missing:
+            chk("smtp:config", "warn", "champs manquants : " + ", ".join(missing))
+        else:
+            chk("smtp:config", "ok",
+                f"{email_config['smtp_host']}:{email_config.get('smtp_port', 587)} "
+                f"({email_config.get('smtp_security', 'starttls')}) -> {email_config['recipient']}")
+
+    # 8. nftables : table monitoria
+    try:
+        if _nft_set_exists():
+            chk("nftables:monitoria_set", "ok", f"inet {NFT_TABLE}/{NFT_SET} present")
+        else:
+            chk("nftables:monitoria_set", "warn",
+                "set absent - sera cree automatiquement au premier blocage d'IP")
+    except Exception as exc:
+        chk("nftables:monitoria_set", "err", str(exc)[:80])
+
+    # 9. Whitelist et regles d'exception
+    with _whitelist_lock:
+        n_cidrs    = len(_whitelist_cidrs)
+        n_ips      = len(_whitelist_ips)
+        n_patterns = len(_whitelist_patterns)
+    n_exc = len(email_config.get("exception_rules", []))
+    chk("whitelist:config", "ok",
+        f"{n_cidrs} CIDR(s), {n_ips} IP(s) exacte(s), "
+        f"{n_patterns} pattern(s) regex, {n_exc} regle(s) d'exception")
+
+    # 10. Runtime
+    with _ip_lock:
+        nb_ips = len(_ip_stats)
+    with clients_lock:
+        nb_clients = len(clients)
+    with _alert_log_lock:
+        nb_alerts = len(_alert_log)
+    with _abuse_lock:
+        nb_abuse_cached = len(_abuse_cache)
+    uptime_s = int((datetime.now(timezone.utc) - _start_time).total_seconds())
+    h, rem = divmod(uptime_s, 3600)
+    m, s   = divmod(rem, 60)
+    chk("runtime:status", "ok",
+        f"uptime {h}h{m:02d}m | {nb_clients} client(s) SSE | "
+        f"{nb_ips} IP(s) suivies | {nb_alerts} alerte(s) | {nb_abuse_cached} IPs en cache abuse")
+
+    # Statut global
+    has_err  = any(c["status"] == "err"  for c in checks)
+    has_warn = any(c["status"] == "warn" for c in checks)
+    overall  = "err" if has_err else ("warn" if has_warn else "ok")
+
+    return jsonify({
+        "overall":      overall,
+        "checks":       checks,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    })
+
+
 @app.route("/api/report/daily")
 def api_report_daily() -> Response:
     """
