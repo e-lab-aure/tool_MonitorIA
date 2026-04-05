@@ -11,7 +11,7 @@
             background: #080808;
             color: #ffffff;
             font-family: 'Courier New', Courier, monospace;
-            font-size: 15px;
+            font-size: 16px;
             height: 100vh;
             display: flex;
             flex-direction: column;
@@ -59,7 +59,7 @@
 
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-        #status-text { font-size: 10px; color: #888; }
+        #status-text { font-size: 15px; color: #888; }
 
         /* Filtres de service */
         .filters {
@@ -75,7 +75,7 @@
             padding: 3px 9px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 15px;
             letter-spacing: 1px;
             border-radius: 2px;
             transition: all 0.2s;
@@ -90,7 +90,7 @@
             color: #aaa;
             padding: 3px 8px;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 15px;
             width: 150px;
             outline: none;
             letter-spacing: 0.5px;
@@ -111,7 +111,7 @@
             padding: 4px 10px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 15px;
             letter-spacing: 1px;
             border-radius: 2px;
             transition: all 0.2s;
@@ -129,7 +129,7 @@
             flex-shrink: 0;
         }
 
-        .stat { font-size: 10px; color: #777; letter-spacing: 1px; }
+        .stat { font-size: 15px; color: #777; letter-spacing: 1px; }
         .stat b { font-weight: bold; }
         .stat.f b { color: #ff4444; }
         .stat.s b { color: #44dd44; }
@@ -196,7 +196,7 @@
 
         .modal-title {
             color: #555;
-            font-size: 11px;
+            font-size: 15px;
             letter-spacing: 3px;
             text-transform: uppercase;
             margin-bottom: 22px;
@@ -211,7 +211,7 @@
             justify-content: space-between;
             margin-bottom: 20px;
         }
-        .toggle-label { color: #666; font-size: 11px; letter-spacing: 1px; }
+        .toggle-label { color: #666; font-size: 15px; letter-spacing: 1px; }
 
         .toggle-switch {
             width: 34px;
@@ -240,7 +240,7 @@
         .field label {
             display: block;
             color: #555;
-            font-size: 10px;
+            font-size: 15px;
             letter-spacing: 1px;
             text-transform: uppercase;
             margin-bottom: 5px;
@@ -252,7 +252,7 @@
             color: #aaa;
             padding: 6px 9px;
             font-family: inherit;
-            font-size: 12px;
+            font-size: 15px;
             outline: none;
             transition: border-color 0.2s;
         }
@@ -266,14 +266,14 @@
             align-items: center;
             gap: 5px;
             color: #555;
-            font-size: 11px;
+            font-size: 15px;
             cursor: pointer;
         }
         .check-label input { accent-color: #cc2222; cursor: pointer; }
 
         /* Feedback */
         .feedback {
-            font-size: 10px;
+            font-size: 15px;
             color: #33aa33;
             min-height: 15px;
             margin-top: 10px;
@@ -297,7 +297,7 @@
             padding: 7px 0;
             cursor: pointer;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 15px;
             letter-spacing: 1px;
             transition: all 0.2s;
         }
@@ -326,12 +326,12 @@
             gap: 8px;
             flex-shrink: 0;
         }
-        .ip-panel-title { font-size: 10px; letter-spacing: 2px; color: #444; flex: 1; }
+        .ip-panel-title { font-size: 15px; letter-spacing: 2px; color: #444; flex: 1; }
 
         .ip-panel-summary {
             padding: 4px 12px;
             border-bottom: 1px solid #0e0e0e;
-            font-size: 9px;
+            font-size: 15px;
             color: #2e2e2e;
             letter-spacing: 0.5px;
             flex-shrink: 0;
@@ -352,7 +352,7 @@
             margin-bottom: 3px;
         }
         .ip-badge {
-            font-size: 8px;
+            font-size: 15px;
             padding: 1px 5px;
             letter-spacing: 1px;
             border-radius: 2px;
@@ -362,8 +362,8 @@
         .ip-badge.scan        { background:#1e1000; color:#ff8833; border:1px solid #442200; }
         .ip-badge.probe       { background:#151500; color:#bbaa00; border:1px solid #333300; }
 
-        .ip-addr  { flex: 1; font-size: 12px; color: #c8c8c8; }
-        .ip-count { flex-shrink: 0; font-size: 13px; font-weight: bold; min-width: 28px; text-align: right; }
+        .ip-addr  { flex: 1; font-size: 15px; color: #c8c8c8; }
+        .ip-count { flex-shrink: 0; font-size: 15px; font-weight: bold; min-width: 28px; text-align: right; }
         .ip-count.brute_force { color: #ff4444; }
         .ip-count.scan        { color: #ff8833; }
         .ip-count.probe       { color: #bbaa00; }
@@ -374,12 +374,12 @@
         .ip-bar-fill.scan        { background: #ff8833; }
         .ip-bar-fill.probe       { background: #bbaa00; }
 
-        .ip-meta { font-size: 9px; color: #2e2e2e; letter-spacing: 0.3px; }
+        .ip-meta { font-size: 15px; color: #2e2e2e; letter-spacing: 0.3px; }
         .ip-meta span { margin-right: 10px; }
         .ip-meta .svc { color: #3a3a3a; }
 
-        .ip-empty { padding: 28px 12px; font-size: 10px; color: #222; text-align: center; letter-spacing: 1px; }
-        .ip-error { padding: 28px 12px; font-size: 10px; color: #441111; text-align: center; letter-spacing: 1px; }
+        .ip-empty { padding: 28px 12px; font-size: 15px; color: #222; text-align: center; letter-spacing: 1px; }
+        .ip-error { padding: 28px 12px; font-size: 15px; color: #441111; text-align: center; letter-spacing: 1px; }
 
         /* Etat de chargement du bouton refresh */
         .btn.loading { opacity: 0.5; cursor: default; }
@@ -392,7 +392,7 @@
             padding: 2px 8px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 9px;
+            font-size: 15px;
             letter-spacing: 1px;
             border-radius: 2px;
             transition: all 0.2s;
@@ -425,8 +425,8 @@
         }
 
         /* Badge geo / abuse */
-        .ip-geo   { font-size: 9px; color: #336688; }
-        .ip-abuse { font-size: 9px; font-weight: bold; }
+        .ip-geo   { font-size: 15px; color: #336688; }
+        .ip-abuse { font-size: 15px; font-weight: bold; }
         .ip-abuse.low  { color: #557733; }
         .ip-abuse.med  { color: #aa7722; }
         .ip-abuse.high { color: #cc2222; }
@@ -438,7 +438,7 @@
             border-top: 1px solid #111;
         }
         .ip-log-line-item {
-            font-size: 9px;
+            font-size: 15px;
             color: #3a3a3a;
             word-break: break-all;
             white-space: pre-wrap;
@@ -447,7 +447,7 @@
             cursor: text;
         }
         .ip-log-line-item:hover { color: #666; }
-        .ip-log-empty { font-size: 9px; color: #2a2a2a; padding: 3px 0; }
+        .ip-log-empty { font-size: 15px; color: #2a2a2a; padding: 3px 0; }
 
         /* Ligne d'alerte dans l'onglet historique */
         .alert-row {
@@ -457,10 +457,10 @@
         }
         .alert-row:hover { background: #0d0d0d; }
         .alert-row-top { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
-        .alert-ts  { font-size: 9px; color: #2a2a2a; flex-shrink: 0; }
-        .alert-ip  { font-size: 10px; color: #666; flex: 1; }
-        .alert-svc { font-size: 10px; color: #555; flex-shrink: 0; }
-        .alert-line { font-size: 9px; color: #2e2e2e; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
+        .alert-ts  { font-size: 15px; color: #2a2a2a; flex-shrink: 0; }
+        .alert-ip  { font-size: 15px; color: #666; flex: 1; }
+        .alert-svc { font-size: 15px; color: #555; flex-shrink: 0; }
+        .alert-line { font-size: 15px; color: #2e2e2e; word-break: break-all; white-space: pre-wrap; margin-top: 3px; }
 
         /* Textarea pour whitelist dans la modal */
         .field textarea {
@@ -470,7 +470,7 @@
             color: #666;
             padding: 6px 9px;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 15px;
             outline: none;
             transition: border-color 0.2s;
             resize: vertical;
@@ -481,7 +481,7 @@
 
         /* Section pliable dans la modal */
         .section-toggle {
-            font-size: 10px;
+            font-size: 15px;
             color: #333;
             letter-spacing: 1px;
             cursor: pointer;
@@ -503,40 +503,40 @@
         }
         .nft-sel-row select {
             flex: 1; background: #080808; border: 1px solid #1c1c1c;
-            color: #888; padding: 3px 6px; font-family: inherit; font-size: 10px; outline: none;
+            color: #888; padding: 3px 6px; font-family: inherit; font-size: 15px; outline: none;
         }
         .nft-sel-row select option { background: #111; }
         .nft-rule-card { padding: 6px 12px; border-bottom: 1px solid #0d0d0d; }
         .nft-rule-card:hover { background: #0d0d0d; }
         .nft-rule-card-top { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; flex-wrap: wrap; }
-        .nft-handle { color: #2a2a2a; font-size: 9px; flex-shrink: 0; }
-        .nft-action-badge { padding: 1px 5px; font-size: 8px; border-radius: 2px; letter-spacing: 1px; flex-shrink: 0; }
+        .nft-handle { color: #2a2a2a; font-size: 15px; flex-shrink: 0; }
+        .nft-action-badge { padding: 1px 5px; font-size: 15px; border-radius: 2px; letter-spacing: 1px; flex-shrink: 0; }
         .nft-action-badge.drop    { background:#2a0808; color:#ff4444; border:1px solid #441111; }
         .nft-action-badge.accept  { background:#001a00; color:#44ff44; border:1px solid #115511; }
         .nft-action-badge.reject  { background:#1a1000; color:#ff8833; border:1px solid #442200; }
         .nft-action-badge.unknown { background:#111;    color:#444;    border:1px solid #222; }
         .nft-pill {
             background: #0d0d0d; border: 1px solid #1a1a1a; color: #555;
-            font-size: 9px; padding: 1px 6px; border-radius: 2px; flex-shrink: 0;
+            font-size: 15px; padding: 1px 6px; border-radius: 2px; flex-shrink: 0;
         }
         .nft-pill.ip   { color: #4488aa; border-color: #1a3344; }
         .nft-pill.port { color: #44aa66; border-color: #1a3322; }
         .nft-pill.set  { color: #aa8844; border-color: #332200; }
-        .nft-counter { color: #2a2a2a; font-size: 9px; margin-left: auto; }
+        .nft-counter { color: #2a2a2a; font-size: 15px; margin-left: auto; }
         .nft-del-btn {
             background: transparent; border: 1px solid #2a1111; color: #551111;
-            padding: 1px 5px; font-size: 8px; cursor: pointer; border-radius: 2px;
+            padding: 1px 5px; font-size: 15px; cursor: pointer; border-radius: 2px;
             font-family: inherit; margin-left: auto; flex-shrink: 0; letter-spacing: 1px;
         }
         .nft-del-btn:hover { border-color: #882222; color: #ff3333; }
         .nft-add-form {
             border-top: 1px solid #111; padding: 8px 12px; flex-shrink: 0; background: #080808;
         }
-        .nft-add-title { font-size: 9px; color: #2a2a2a; letter-spacing: 2px; margin-bottom: 7px; }
+        .nft-add-title { font-size: 15px; color: #2a2a2a; letter-spacing: 2px; margin-bottom: 7px; }
         .nft-add-row { display: flex; gap: 5px; margin-bottom: 5px; }
         .nft-add-row input, .nft-add-row select {
             flex: 1; background: #0a0a0a; border: 1px solid #1c1c1c; color: #888;
-            padding: 3px 6px; font-family: inherit; font-size: 10px; outline: none; min-width: 0;
+            padding: 3px 6px; font-family: inherit; font-size: 15px; outline: none; min-width: 0;
         }
         .nft-add-row input::placeholder { color: #222; }
         .nft-add-row input:focus, .nft-add-row select:focus { border-color: #333; }
@@ -544,33 +544,33 @@
 
         /* ===== FLUX TRAFIC ===== */
         .flux-section-title {
-            padding: 5px 12px; font-size: 9px; color: #2a2a2a;
+            padding: 5px 12px; font-size: 15px; color: #2a2a2a;
             letter-spacing: 2px; border-bottom: 1px solid #0a0a0a; flex-shrink: 0;
         }
         .scan-alert { padding: 6px 12px; border-bottom: 1px solid #1a0800; background: #0d0800; }
         .scan-alert-top { display: flex; align-items: center; gap: 6px; }
         .scan-badge {
             background: #2a1000; color: #ff8833; border: 1px solid #552200;
-            font-size: 8px; padding: 2px 6px; border-radius: 2px; letter-spacing: 1px;
+            font-size: 15px; padding: 2px 6px; border-radius: 2px; letter-spacing: 1px;
         }
-        .scan-ip    { font-size: 10px; color: #cc5500; flex: 1; }
-        .scan-ports { font-size: 9px; color: #553300; margin-top: 3px; word-break: break-all; }
+        .scan-ip    { font-size: 15px; color: #cc5500; flex: 1; }
+        .scan-ports { font-size: 15px; color: #553300; margin-top: 3px; word-break: break-all; }
         .heatmap-row {
             display: flex; align-items: center; gap: 6px;
             padding: 4px 12px; border-bottom: 1px solid #0a0a0a;
         }
         .heatmap-row:hover { background: #0d0d0d; }
-        .heatmap-port { width: 42px; font-size: 11px; color: #777; flex-shrink: 0; font-weight: bold; }
-        .heatmap-svc  { width: 65px; font-size: 9px; color: #3a3a3a; flex-shrink: 0; }
+        .heatmap-port { width: 42px; font-size: 15px; color: #777; flex-shrink: 0; font-weight: bold; }
+        .heatmap-svc  { width: 65px; font-size: 15px; color: #3a3a3a; flex-shrink: 0; }
         .heatmap-bar  { flex: 1; height: 3px; background: #111; border-radius: 1px; overflow: hidden; }
         .heatmap-fill { height: 100%; border-radius: 1px; background: #cc2222; transition: width 0.4s; }
-        .heatmap-cnt  { width: 32px; text-align: right; font-size: 10px; color: #555; flex-shrink: 0; }
-        .heatmap-trend { width: 10px; font-size: 10px; flex-shrink: 0; }
+        .heatmap-cnt  { width: 32px; text-align: right; font-size: 15px; color: #555; flex-shrink: 0; }
+        .heatmap-trend { width: 10px; font-size: 15px; flex-shrink: 0; }
         .heatmap-trend.up    { color: #ff4444; }
         .heatmap-trend.down  { color: #33aa33; }
         .heatmap-trend.stable { color: #2a2a2a; }
         .timeline-section { padding: 6px 12px 8px; border-bottom: 1px solid #0e0e0e; flex-shrink: 0; }
-        .timeline-title { font-size: 9px; color: #2a2a2a; letter-spacing: 1px; margin-bottom: 5px; }
+        .timeline-title { font-size: 15px; color: #2a2a2a; letter-spacing: 1px; margin-bottom: 5px; }
         .timeline-bars { display: flex; align-items: flex-end; gap: 1px; height: 44px; }
         .timeline-bar {
             flex: 1; background: #141414; cursor: pointer; border-radius: 1px 1px 0 0;
@@ -582,7 +582,7 @@
         .timeline-bar.empty    { background: #0d0d0d; cursor: default; }
         .timeline-labels {
             display: flex; justify-content: space-between;
-            font-size: 8px; color: #2a2a2a; margin-top: 3px;
+            font-size: 15px; color: #2a2a2a; margin-top: 3px;
         }
         .flux-ip-group { border-bottom: 1px solid #0e0e0e; }
         .flux-ip-header {
@@ -590,8 +590,8 @@
             padding: 5px 12px; cursor: pointer; background: #0a0a0a;
         }
         .flux-ip-header:hover { background: #0d0d0d; }
-        .flux-ip-addr  { flex: 1; font-size: 11px; color: #c8c8c8; }
-        .flux-ip-total { font-size: 12px; font-weight: bold; flex-shrink: 0; }
+        .flux-ip-addr  { flex: 1; font-size: 15px; color: #c8c8c8; }
+        .flux-ip-total { font-size: 15px; font-weight: bold; flex-shrink: 0; }
         .flux-ip-total.brute_force { color: #ff4444; }
         .flux-ip-total.scan        { color: #ff8833; }
         .flux-ip-total.probe       { color: #bbaa00; }
@@ -600,10 +600,10 @@
             padding: 3px 12px 3px 28px; border-top: 1px solid #0a0a0a;
         }
         .flux-port-row:hover { background: #0d0d0d; }
-        .flux-port-num { width: 38px; font-size: 10px; color: #555; flex-shrink: 0; }
-        .flux-port-svc { flex: 1; font-size: 9px; color: #3a3a3a; }
-        .flux-port-cnt { font-size: 10px; font-weight: bold; color: #666; flex-shrink: 0; }
-        .flux-port-rate { font-size: 9px; color: #2a2a2a; flex-shrink: 0; width: 36px; text-align: right; }
+        .flux-port-num { width: 38px; font-size: 15px; color: #555; flex-shrink: 0; }
+        .flux-port-svc { flex: 1; font-size: 15px; color: #3a3a3a; }
+        .flux-port-cnt { font-size: 15px; font-weight: bold; color: #666; flex-shrink: 0; }
+        .flux-port-rate { font-size: 15px; color: #2a2a2a; flex-shrink: 0; width: 36px; text-align: right; }
 
         /* Indicateur de niveau de menace dans la barre de stats */
         .threat-indicator {
@@ -611,13 +611,13 @@
             align-items: center;
             gap: 7px;
             margin-left: auto;
-            font-size: 10px;
+            font-size: 15px;
             letter-spacing: 1px;
         }
         .threat-badge {
             padding: 2px 8px;
             border-radius: 2px;
-            font-size: 9px;
+            font-size: 15px;
             font-weight: bold;
             letter-spacing: 1px;
             transition: all 0.5s;
@@ -628,7 +628,7 @@
         .threat-badge.high     { background:#1a0000; color:#ff4400; border:1px solid #441100; }
         .threat-badge.critical { background:#2a0000; color:#ff0000; border:1px solid #660000;
                                  animation: blink 0.6s infinite; }
-        .threat-detail { color: #2a2a2a; font-size: 9px; }
+        .threat-detail { color: #2a2a2a; font-size: 15px; }
 
         /* Bouton bloquer IP dans ip-row */
         .btn-block {
@@ -638,7 +638,7 @@
             padding: 1px 6px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 8px;
+            font-size: 15px;
             letter-spacing: 1px;
             border-radius: 2px;
             flex-shrink: 0;
@@ -662,7 +662,7 @@
             flex: 1;
             overflow-y: auto;
             padding: 8px 12px;
-            font-size: 9px;
+            font-size: 15px;
             color: #3a3a3a;
             white-space: pre;
             font-family: 'Courier New', monospace;
@@ -687,12 +687,12 @@
             color: #aaa;
             padding: 3px 8px;
             font-family: inherit;
-            font-size: 10px;
+            font-size: 15px;
             outline: none;
         }
         .block-form input:focus { border-color: #333; }
         .block-form input::placeholder { color: #2a2a2a; }
-        .block-msg { padding: 3px 12px; font-size: 9px; min-height: 18px; }
+        .block-msg { padding: 3px 12px; font-size: 15px; min-height: 18px; }
         .block-msg.ok  { color: #33aa33; }
         .block-msg.err { color: #cc3333; }
 
@@ -716,16 +716,16 @@
             background: #080808;
             flex-shrink: 0;
         }
-        .diag-title { font-size: 13px; letter-spacing: 3px; font-weight: bold; color: #cc2222; }
+        .diag-title { font-size: 15px; letter-spacing: 3px; font-weight: bold; color: #cc2222; }
         .diag-title span { color: #333; }
         .diag-overall-badge {
-            font-size: 9px; letter-spacing: 2px; padding: 2px 8px;
+            font-size: 15px; letter-spacing: 2px; padding: 2px 8px;
             border-radius: 2px; font-weight: bold;
         }
         .diag-overall-badge.ok   { background:#001500; color:#33ff33; border:1px solid #115511; }
         .diag-overall-badge.warn { background:#181000; color:#ffaa00; border:1px solid #554400; }
         .diag-overall-badge.err  { background:#1a0000; color:#ff4444; border:1px solid #441111; }
-        .diag-ts { font-size: 9px; color: #2a2a2a; margin-left: auto; }
+        .diag-ts { font-size: 15px; color: #2a2a2a; margin-left: auto; }
 
         .diag-body {
             flex: 1;
@@ -754,8 +754,8 @@
         .diag-dot.ok   { background: #33aa33; }
         .diag-dot.warn { background: #cc8800; }
         .diag-dot.err  { background: #cc2222; box-shadow: 0 0 4px #cc2222; }
-        .diag-check-name   { font-size: 10px; color: #666; flex-shrink: 0; min-width: 160px; letter-spacing: 0.5px; }
-        .diag-check-detail { font-size: 9px; color: #333; word-break: break-all; flex: 1; }
+        .diag-check-name   { font-size: 15px; color: #666; flex-shrink: 0; min-width: 160px; letter-spacing: 0.5px; }
+        .diag-check-detail { font-size: 15px; color: #333; word-break: break-all; flex: 1; }
         .diag-check.err  .diag-check-name { color: #aa3333; }
         .diag-check.warn .diag-check-name { color: #886622; }
         .diag-check.ok   .diag-check-name { color: #336633; }
@@ -766,7 +766,7 @@
             display: flex;
             gap: 10px;
             align-items: center;
-            font-size: 9px;
+            font-size: 15px;
             color: #2a2a2a;
             flex-shrink: 0;
         }
@@ -791,9 +791,9 @@
             background: #080808;
             flex-shrink: 0;
         }
-        .flux-ov-title { font-size: 13px; letter-spacing: 3px; font-weight: bold; color: #cc2222; }
+        .flux-ov-title { font-size: 15px; letter-spacing: 3px; font-weight: bold; color: #cc2222; }
         .flux-ov-title span { color: #333; }
-        .flux-ov-summary { font-size: 10px; color: #333; letter-spacing: 1px; }
+        .flux-ov-summary { font-size: 15px; color: #333; letter-spacing: 1px; }
 
         .flux-ov-body {
             flex: 1;
@@ -842,12 +842,12 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 10px;
+            font-size: 15px;
         }
         .blocked-row:hover { background: #0d0d0d; }
         .blocked-ip   { flex: 1; color: #666; }
-        .blocked-ts   { font-size: 9px; color: #2a2a2a; }
-        .blocked-reason { font-size: 9px; color: #444; flex: 0 0 auto; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .blocked-ts   { font-size: 15px; color: #2a2a2a; }
+        .blocked-reason { font-size: 15px; color: #444; flex: 0 0 auto; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -2511,7 +2511,7 @@
             t.setAttribute('x', W / 2); t.setAttribute('y', H / 2);
             t.setAttribute('text-anchor', 'middle');
             t.setAttribute('fill', '#1a1a1a');
-            t.setAttribute('font-size', '14');
+            t.setAttribute('font-size', '16');
             t.setAttribute('font-family', 'Courier New');
             t.setAttribute('letter-spacing', '4');
             t.textContent = 'AUCUN FLUX HOSTILE RECENT';
@@ -2576,7 +2576,7 @@
             t.setAttribute('x', x); t.setAttribute('y', y);
             t.setAttribute('text-anchor', anchor || 'start');
             t.setAttribute('fill', fill || '#1a1a1a');
-            t.setAttribute('font-size', size || '10');
+            t.setAttribute('font-size', size || '12');
             t.setAttribute('font-family', 'Courier New');
             t.setAttribute('letter-spacing', '1');
             t.textContent = text;
@@ -2717,7 +2717,7 @@
             ipT.setAttribute('x', NODE_SRC - 12); ipT.setAttribute('y', y + 4);
             ipT.setAttribute('text-anchor', 'end');
             ipT.setAttribute('fill', color); ipT.setAttribute('fill-opacity', '0.75');
-            ipT.setAttribute('font-size', '11'); ipT.setAttribute('font-family', 'Courier New');
+            ipT.setAttribute('font-size', '13'); ipT.setAttribute('font-family', 'Courier New');
             ipT.textContent = ip;
             svg.appendChild(ipT);
 
@@ -2725,14 +2725,14 @@
             const bT = document.createElementNS(NS, 'text');
             bT.setAttribute('x', NODE_SRC + 12); bT.setAttribute('y', y - 5);
             bT.setAttribute('fill', color); bT.setAttribute('fill-opacity', '0.45');
-            bT.setAttribute('font-size', '8'); bT.setAttribute('font-family', 'Courier New');
+            bT.setAttribute('font-size', '10'); bT.setAttribute('font-family', 'Courier New');
             bT.textContent = (THREAT_SHORT[info.threat] || '') + (isScan ? ' SCAN' : '');
             svg.appendChild(bT);
 
             const cntT = document.createElementNS(NS, 'text');
             cntT.setAttribute('x', NODE_SRC + 12); cntT.setAttribute('y', y + 4);
             cntT.setAttribute('fill', '#2a2a2a');
-            cntT.setAttribute('font-size', '10'); cntT.setAttribute('font-family', 'Courier New');
+            cntT.setAttribute('font-size', '12'); cntT.setAttribute('font-family', 'Courier New');
             cntT.textContent = info.total + ' evt';
             svg.appendChild(cntT);
         });
@@ -2749,7 +2749,7 @@
             const portT = document.createElementNS(NS, 'text');
             portT.setAttribute('x', NODE_PRT + 12); portT.setAttribute('y', y + 4);
             portT.setAttribute('fill', '#3377bb'); portT.setAttribute('fill-opacity', '0.75');
-            portT.setAttribute('font-size', '11'); portT.setAttribute('font-family', 'Courier New');
+            portT.setAttribute('font-size', '13'); portT.setAttribute('font-family', 'Courier New');
             portT.textContent = ':' + (port || '?')
                 + (info.service ? '  ' + info.service.toUpperCase() : '');
             svg.appendChild(portT);
@@ -2758,7 +2758,7 @@
             cntT.setAttribute('x', NODE_PRT - 12); cntT.setAttribute('y', y - 5);
             cntT.setAttribute('text-anchor', 'end');
             cntT.setAttribute('fill', '#2a2a2a');
-            cntT.setAttribute('font-size', '10'); cntT.setAttribute('font-family', 'Courier New');
+            cntT.setAttribute('font-size', '12'); cntT.setAttribute('font-family', 'Courier New');
             cntT.textContent = info.total + ' evt';
             svg.appendChild(cntT);
         });
@@ -2772,7 +2772,7 @@
             const lt = document.createElementNS(NS, 'text');
             lt.setAttribute('x', lx + 7); lt.setAttribute('y', ly + 1);
             lt.setAttribute('fill', lc); lt.setAttribute('fill-opacity', '0.55');
-            lt.setAttribute('font-size', '8'); lt.setAttribute('font-family', 'Courier New');
+            lt.setAttribute('font-size', '10'); lt.setAttribute('font-family', 'Courier New');
             lt.textContent = ip;
             svg.appendChild(lt);
         });
