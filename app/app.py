@@ -99,7 +99,7 @@ DEFAULT_CONFIG = {
 email_config: dict = DEFAULT_CONFIG.copy()
 
 # Heure de demarrage de l'application (pour l'endpoint /health)
-_start_time = datetime.now(timezone.utc)
+_start_time = datetime.now()
 
 # ---------------------------------------------------------------------------
 # Clients SSE connectes
@@ -512,7 +512,7 @@ def send_alert(entry: dict) -> None:
         return
 
     # Deduplication : une alerte par type d'evenement max toutes les 5 minutes
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
     with _alert_lock:
         last = _alert_cooldown.get(entry["type"])
         if last and (now - last).total_seconds() < ALERT_COOLDOWN_SECONDS:
@@ -537,7 +537,7 @@ def send_alert(entry: dict) -> None:
             app.logger.info(f"[INFO] Alerte mail envoyee pour {entry['service']} - {entry['type']}")
             # Enregistrement dans l'historique des alertes envoyees
             record = {
-                "sent_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "sent_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "type":    entry["type"],
                 "service": entry["service"],
                 "ip":      extract_ip(entry.get("line", "")),
@@ -679,7 +679,7 @@ def _aggregate_buckets(buckets: dict) -> dict | None:
     Inclut les dernieres lignes de log brutes, le taux horaire, la distribution
     par heure (24 slots) et l'indicateur recidiviste (>= 2 jours d'activite).
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
+    cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).date().isoformat()
     total_count  = 0
     active_days  = 0
     first_seen: str | None = None
@@ -747,7 +747,7 @@ def record_ip_event(ip: str, service: str, log_type: str, line: str = "") -> Non
     Suit la distribution horaire des evenements (cle = heure UTC sous forme "HH").
     Declenche un lookup AbuseIPDB en arriere-plan pour les nouvelles IPs.
     """
-    now     = datetime.now(timezone.utc)
+    now     = datetime.now()
     today   = now.date().isoformat()
     now_iso = now.isoformat(timespec="seconds")
     hour_key = str(now.hour)
@@ -805,7 +805,7 @@ def save_ip_stats() -> None:
     Utilise une ecriture atomique (fichier temporaire + rename) pour eviter
     toute corruption du fichier en cas d'arret brutal en cours d'ecriture.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)).date().isoformat()
+    cutoff = (datetime.now() - timedelta(days=RETENTION_DAYS)).date().isoformat()
     with _ip_lock:
         for ip in list(_ip_stats.keys()):
             buckets = _ip_stats[ip]["buckets"]
@@ -1004,7 +1004,7 @@ def block_ip(ip: str, reason: str = "manuel") -> tuple[bool, str]:
     if r.returncode != 0:
         return False, f"nft : {r.stderr.strip()}"
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _blocked_lock:
         _blocked_ips[ip] = {"blocked_at": now, "method": "nft", "reason": reason}
     save_blocked_ips()
@@ -1124,7 +1124,7 @@ def process_line(line: str, fallback_service: str = None) -> None:
     # Suivi des tentatives hostiles par IP
     # Les IPs en liste blanche et les evenements correspondant a une regle d'exception
     # (ex: connexions root locales declenchees par des crons) sont exclus du suivi.
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     entry = {
         "timestamp": now_str,
         "line":      line,
@@ -1303,7 +1303,7 @@ def health():
     Endpoint de sante de l'application.
     Utilise par le HEALTHCHECK du Containerfile et les sondes de monitoring externes.
     """
-    uptime = int((datetime.now(timezone.utc) - _start_time).total_seconds())
+    uptime = int((datetime.now() - _start_time).total_seconds())
     with clients_lock:
         nb_clients = len(clients)
     with _ip_lock:
@@ -1393,7 +1393,7 @@ def api_ip_stats() -> Response:
     Inclut : lignes de log, taux horaire, geolocalisation, score AbuseIPDB,
     indicateur 'nouvelle IP', indicateur 'recidiviste' et distribution 24h.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
     with _ip_lock:
         snapshot = list(_ip_stats.items())
 
@@ -1896,7 +1896,7 @@ def api_diagnostics() -> Response:
         nb_alerts = len(_alert_log)
     with _abuse_lock:
         nb_abuse_cached = len(_abuse_cache)
-    uptime_s = int((datetime.now(timezone.utc) - _start_time).total_seconds())
+    uptime_s = int((datetime.now() - _start_time).total_seconds())
     h, rem = divmod(uptime_s, 3600)
     m, s   = divmod(rem, 60)
     chk("runtime:status", "ok",
@@ -1911,7 +1911,7 @@ def api_diagnostics() -> Response:
     return jsonify({
         "overall":      overall,
         "checks":       checks,
-        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     })
 
 
@@ -1921,7 +1921,7 @@ def api_report_daily() -> Response:
     Rapport quotidien des menaces : top IPs, types d'evenements et services cibles
     sur les dernieres 24 heures depuis le buffer d'evenements et les stats IP.
     """
-    now    = datetime.now(timezone.utc)
+    now    = datetime.now()
     since  = now - timedelta(hours=24)
     since_str = since.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2030,7 +2030,7 @@ def api_ip_logs_stats() -> Response:
                 mtime = os.path.getmtime(fpath)
                 ip    = fname[:-6].replace("_", ".")  # reverse sanitize
                 files.append({"ip": ip, "size_bytes": sz,
-                               "last_seen": datetime.fromtimestamp(mtime, tz=timezone.utc)
+                               "last_seen": datetime.fromtimestamp(mtime)
                                              .strftime("%Y-%m-%d %H:%M:%S")})
             except OSError:
                 pass
@@ -2052,7 +2052,7 @@ def api_threat_status() -> Response:
     Retourne un resume des menaces actives des 15 dernieres minutes
     calcule depuis le buffer d'evenements en memoire.
     """
-    cutoff_dt = datetime.now(timezone.utc).replace(
+    cutoff_dt = datetime.now().replace(
         second=0, microsecond=0
     ) - timedelta(minutes=15)
     cutoff_str = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -2213,7 +2213,7 @@ def compute_flux() -> dict:
     Calcule les flux de trafic hostile des 60 dernieres minutes
     depuis _event_buffer. Retourne flows, timeline, port_heatmap, active_scans.
     """
-    now    = datetime.now(timezone.utc)
+    now    = datetime.now()
     cutoff = now - timedelta(minutes=60)
 
     with _buffer_lock:
@@ -2230,7 +2230,7 @@ def compute_flux() -> dict:
         if etype not in _HOSTILE_TYPES:
             continue
         try:
-            ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            ts = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
         if ts < cutoff:
