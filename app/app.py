@@ -440,10 +440,14 @@ def _extract_user(line: str) -> str | None:
 def matches_exception_rule(log_type: str, ip: str | None, line: str) -> bool:
     """
     Retourne True si l'evenement correspond a une regle d'exception configuree.
-    Chaque regle est un dict avec les cles optionnelles : type, user_pattern, src_pattern.
-    Toutes les cles presentes dans une regle doivent correspondre (ET).
+    Chaque regle est un dict avec les cles optionnelles (toutes en ET) :
+      type         : type d'evenement exact (ex: "success")
+      user_pattern : regex sur l'utilisateur extrait de la ligne
+      src_pattern  : regex sur l'IP source
+      line_pattern : regex sur la ligne brute complete (le plus flexible)
     Plusieurs regles sont evaluees en OU.
-    Exemple de regle pour filtrer les connexions root locales des crons :
+    Exemples :
+      {"type": "success", "line_pattern": "pam_unix\\(cron"}
       {"type": "success", "user_pattern": "root", "src_pattern": "127\\."}
     """
     rules = email_config.get("exception_rules", [])
@@ -461,6 +465,10 @@ def matches_exception_rule(log_type: str, ip: str | None, line: str) -> bool:
         src_pat = rule.get("src_pattern")
         if src_pat:
             if not ip or not re.search(src_pat, ip):
+                continue
+        line_pat = rule.get("line_pattern")
+        if line_pat:
+            if not re.search(line_pat, line):
                 continue
         return True
     return False

@@ -1103,8 +1103,15 @@
                 <textarea id="wl-ips" placeholder="1.2.3.4&#10;5.6.7.8"></textarea>
             </div>
             <div class="field">
-                <label>Regles d'exception JSON (tableau, une par ligne)</label>
-                <textarea id="wl-rules" placeholder='{"type":"success","user_pattern":"root","src_pattern":"127\\."}' style="min-height:80px"></textarea>
+                <label>Regles d'exception JSON (une regle par ligne)</label>
+                <textarea id="wl-rules" placeholder='{"type":"success","line_pattern":"pam_unix\\(cron"}&#10;{"type":"success","user_pattern":"root","src_pattern":"127\\."}' style="min-height:80px"></textarea>
+                <div style="font-size:11px;color:#2a2a2a;margin-top:4px;line-height:1.6">
+                    Champs disponibles (tous optionnels, combines en ET) :<br>
+                    <b style="color:#333">type</b> : type exact (success, failure, ban...)<br>
+                    <b style="color:#333">line_pattern</b> : regex sur la ligne brute (ex: filtrer CRON, PAM...)<br>
+                    <b style="color:#333">user_pattern</b> : regex sur l'utilisateur extrait<br>
+                    <b style="color:#333">src_pattern</b> : regex sur l'IP source
+                </div>
             </div>
         </div>
 
